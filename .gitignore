@@ -1,0 +1,22 @@
+# Credenciais — NUNCA commitar
+.env
+
+# Claude Code
+.claude/
+
+# Banco de dados local
+jobs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+
+# Logs
+*.log
+log.txt
