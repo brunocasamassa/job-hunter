@@ -1,39 +1,6 @@
 # main.py
 # Orquestra scraping → filtragem → banco → notificação
 
-# ---------------------------------------------------------------------------
-# TODO — Glassdoor não está retornando vagas (erro 400 / "location not parsed")
-#
-# CAUSA RAIZ:
-#   O token CSRF do Glassdoor expira periodicamente. O JobSpy tenta buscar um
-#   token fresh a cada execução visitando glassdoor.com, mas o endpoint de
-#   localização (findPopularLocationAjax.htm) rejeita com 400 quando o token
-#   ou os cookies de sessão estão inválidos.
-#
-# O QUE JÁ FOI CORRIGIDO:
-#   - "glassdoor" foi adicionado ao site_name em job_scraper.py
-#   - O monkey-patch com token no formato errado (MD5 hex) foi removido
-#   - Glassdoor agora roda só para "United States" (glassdoor.com),
-#     evitando domínios regionais que causavam falhas adicionais
-#
-# O QUE FALTA RESOLVER — token CSRF expirado:
-#   1. Abra glassdoor.com no browser
-#   2. DevTools → aba Network → faça qualquer busca de vaga
-#   3. Filtre por "findPopularLocation" ou "graph"
-#   4. Em qualquer requisição, copie o header "gd-csrf-token"
-#      O formato atual é hex simples: ex. e07f85946a6543c3a52ea48c4d8baa1d
-#   5. Em job_scraper.py, adicione o bloco abaixo com o valor copiado:
-#
-#      import jobspy.glassdoor.constant as _gd_const
-#      _gd_const.fallback_token = "SEU_TOKEN_AQUI"
-#
-#   6. Rode: python glassdoor_manager.py
-#      → se retornar vagas, está funcionando
-#      → se retornar 0, o token expirou de novo — repita os passos acima
-#
-# NOTA: o fallback embutido no JobSpy usa formato antigo (xxxxx:yyyyy:zzzzz)
-#       que o Glassdoor não aceita mais. O formato atual é hex simples.
-# ---------------------------------------------------------------------------
 
 from job_scraper import fetch_jobs
 from tracker import init_db, is_new, save_job, mark_notified, purge_old_jobs

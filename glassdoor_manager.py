@@ -7,19 +7,20 @@
 #   python glassdoor_manager.py
 
 import sys
+import jobspy_patches  # noqa: F401
 from jobspy import scrape_jobs
 
 
 def test_glassdoor() -> bool:
-    print("🔍 Testando busca no Glassdoor (United States)...")
+    print("🔍 Testando busca no Glassdoor (Brasil)...")
     try:
         df = scrape_jobs(
-            site_name=["glassdoor"],
-            search_term="Android developer",
-            location="United States",
+            site_name=["glassdoor" ],
+            search_term="Android",
+            location="Brasil",
             results_wanted=5,
             hours_old=72,
-            country_indeed="USA",
+            country_indeed="brazil",
         )
 
         if df is None or df.empty:

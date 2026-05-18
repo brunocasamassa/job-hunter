@@ -6,7 +6,7 @@ import time
 from main import run
 from notifier import send_error_alert
 
-INTERVALO_MINUTOS = 480
+INTERVALO_MINUTOS = 720
 
 print(f"⏰ Agendador iniciado — verificando a cada {INTERVALO_MINUTOS} minutos")
 print("   Pressione Ctrl+C para parar.\n")

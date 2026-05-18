@@ -3,8 +3,9 @@
 #
 # Glassdoor parou de funcionar? Rode: python glassdoor_manager.py
 
-from jobspy import scrape_jobs
 import pandas as pd
+import logger
+import jobspy_patches  # noqa: F401
 
 SEARCH_TERM = "Android"
 
@@ -12,7 +13,8 @@ KEYWORDS = [
     "Android",
     "android",
     "Automotive",
-    "AOSP"
+    "AOSP",
+    "mobile"
 ]
 
 BLACKLIST_TITLES = [
@@ -31,7 +33,7 @@ BLACKLIST_TITLES = [
 # country_indeed restringe o domínio regional do Indeed.
 REGIONS = [
     # América do Sul
-    ("Brazil",    "Brazil"),
+    ("Brasil",    "Brazil"),
     ("Argentina", "Argentina"),
     ("Colombia",  "Colombia"),
     ("Chile",     "Chile"),
@@ -52,23 +54,37 @@ REGIONS = [
     ("Poland",         "Poland"),
     # Leste Europeu
     ("Czech Republic", "Czech Republic"),
-    ("Romania",        "Romania"),
     ("Hungary",        "Hungary"),
     ("Slovakia",       "Slovakia"),
     ("Bulgaria",       "Bulgaria"),
     ("Croatia",        "Croatia"),
-    ("Slovenia",       "Slovenia"),
-    ("Serbia",         "Serbia"),
-    ("Ukraine",        "Ukraine"),
     ("Lithuania",      "Lithuania"),
     ("Latvia",         "Latvia"),
     ("Estonia",        "Estonia"),
+    # Ásia
+    ("Thailand",       "Thailand"),
+    ("Singapore",      "Singapore"),
+    ("Indonesia",      "Indonesia"),
 ]
 
-# Países com suporte ao Glassdoor (têm domínio próprio no JobSpy).
-# O Glassdoor só é consultado para estes — usar glassdoor.com (USA) como base
-# é o mais confiável pois o token CSRF é extraído desse domínio.
-GLASSDOOR_REGIONS = [("United States", "USA")]
+# Países com domínio Glassdoor próprio no enum do JobSpy.
+# Demais países em REGIONS lançam `Glassdoor is not available for X` —
+# por isso a lista do Glassdoor é separada da do LinkedIn/Indeed.
+GLASSDOOR_REGIONS = [
+    ("Brasil",         "Brazil"),
+    ("Argentina",      "Argentina"),
+    ("United States",  "USA"),
+    ("Canada",         "Canada"),
+    ("Mexico",         "Mexico"),
+    ("United Kingdom", "UK"),
+    ("Germany",        "Germany"),
+    ("Netherlands",    "Netherlands"),
+    ("Spain",          "Spain"),
+    ("France",         "France"),
+    ("Switzerland",    "Switzerland"),
+    ("Ireland",        "Ireland"),
+    ("Singapore",      "Singapore"),
+]
 
 
 def is_relevant(title: str) -> bool:
@@ -80,26 +96,21 @@ def is_relevant(title: str) -> bool:
 
 def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, all_jobs, label=None):
     label = label or location
-    print(f"🔍 Buscando: '{SEARCH_TERM}' em {label} ({', '.join(site_names)})...")
+    print(f"\n🔍 Buscando: '{SEARCH_TERM}' em {label} ({', '.join(site_names)})...")
     stats["requests"] += 1
     try:
-        jobs_df = scrape_jobs(
-            site_name=site_names,
-            search_term=SEARCH_TERM,
-            location=location,
-            results_wanted=20,
-            hours_old=hours_old,
-            country_indeed=country_indeed,
+        jobs_df = logger.debug_scrape(
+            site_names, SEARCH_TERM, location, country_indeed, hours_old
         )
-
         if jobs_df is None or jobs_df.empty:
-            print(f"  ⚠️  Nenhuma vaga encontrada em {label}")
             return
 
+        kept = 0
         for _, row in jobs_df.iterrows():
             title = str(row.get("title", ""))
             if not is_relevant(title):
                 continue
+            kept += 1
 
             all_jobs.append({
                 "title":       title,
@@ -112,9 +123,10 @@ def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, 
                 "description": str(row.get("description", ""))[:500],
             })
 
-    except Exception as e:
+        print(f"  ✅ {kept}/{len(jobs_df)} passaram no filtro de título")
+
+    except Exception:
         stats["errors"] += 1
-        print(f"  ❌ Erro ao buscar em {label}: {e}")
 
 
 def fetch_jobs(hours_old: int = 24) -> tuple[list[dict], dict]:
@@ -134,8 +146,7 @@ def fetch_jobs(hours_old: int = 24) -> tuple[list[dict], dict]:
 
     for location, country_indeed in GLASSDOOR_REGIONS:
         _scrape_and_collect(
-            ["glassdoor"], location, country_indeed, hours_old, stats, all_jobs,
-            label=f"{location} (Glassdoor global)"
+            ["glassdoor"], location, country_indeed, hours_old, stats, all_jobs
         )
 
     # Remove duplicatas pelo link
