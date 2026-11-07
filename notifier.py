@@ -79,6 +79,15 @@ def format_job_message(job: dict, index: int, total: int) -> str:
     salary = (job.get("salary") or "").strip(" -")
     salary_line = f"💰 <b>Salário:</b> {_esc(salary)}\n" if salary else ""
 
+    # Candidatura direto no site/ATS da empresa costuma converter melhor que
+    # Easy Apply; só existe quando a vaga não é candidatura dentro do board.
+    url_direct = job.get("url_direct") or ""
+    direct_line = (
+        f"\n🎯 <a href=\"{_esc(url_direct)}\">Aplicar no site da empresa</a>"
+        if url_direct.startswith("http")
+        else ""
+    )
+
     return (
         f"🤖 <b>Vaga {index}/{total} — {_esc(str(job['source']).upper())}</b>\n"
         f"━━━━━━━━━━━━━━━━\n"
@@ -88,6 +97,7 @@ def format_job_message(job: dict, index: int, total: int) -> str:
         f"📅 {_esc(job['date_posted'])}\n"
         f"{salary_line}"
         f"🔗 <a href=\"{_esc(job['job_url'])}\">Ver vaga</a>"
+        f"{direct_line}"
     )
 
 

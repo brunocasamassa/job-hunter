@@ -43,6 +43,14 @@ def test_format_escapes_html_in_fields():
     assert "Salário" not in msg  # salário vazio não gera linha
 
 
+def test_direct_apply_link_only_when_available():
+    with_direct = notifier.format_job_message({**_job(), "url_direct": "https://careers.acme.com/1"}, 1, 1)
+    from_old_row = notifier.format_job_message({**_job(), "url_direct": None}, 1, 1)
+
+    assert 'href="https://careers.acme.com/1">Aplicar no site da empresa' in with_direct
+    assert "Aplicar no site da empresa" not in from_old_row
+
+
 def test_send_retries_after_429_then_succeeds(monkeypatch, no_sleep):
     responses = [
         FakeResponse(429, {"ok": False, "parameters": {"retry_after": 2}}),

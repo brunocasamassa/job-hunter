@@ -3,13 +3,29 @@
 #
 # Glassdoor parou de funcionar? Rode: python glassdoor_manager.py
 
+import random
 import re
+import time
 
 import pandas as pd
 import logger
 import jobspy_patches  # noqa: F401
+from jobspy.linkedin import LinkedIn
+from jobspy.model import ScraperInput, Site
 
 SEARCH_TERM = "Android"
+
+# A busca do LinkedIn não traz descrição nem o link de candidatura no site da
+# empresa. Buscamos esses detalhes só das vagas NOVAS, 1 request por vaga.
+# O LinkedIn limita por IP: há teto por execução e parada automática depois de
+# falhas seguidas. Se começar a bloquear, ponha False.
+LINKEDIN_FETCH_DETAILS = True
+LINKEDIN_DETAILS_MAX_PER_RUN = 60
+LINKEDIN_DETAILS_DELAY_SECONDS = (2.0, 4.0)
+LINKEDIN_DETAILS_MAX_CONSECUTIVE_FAILURES = 3
+
+# Teto para a descrição guardada no banco.
+DESCRIPTION_MAX_CHARS = 20_000
 
 # KEYWORDS e BLACKLIST_TITLES não diferenciam maiúsculas/minúsculas.
 # - KEYWORDS casam como trecho do título ("android" pega "Android Engineer").
@@ -183,7 +199,8 @@ def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, 
                 "source":      _clean(row.get("site")),
                 "date_posted": _clean(row.get("date_posted")),
                 "salary":      _format_salary(row),
-                "description": _clean(row.get("description"), default="")[:500],
+                "url_direct":  _clean(row.get("job_url_direct"), default=""),
+                "description": _clean(row.get("description"), default="")[:DESCRIPTION_MAX_CHARS],
             })
 
         print(f"  ✅ {kept}/{len(jobs_df)} passaram no filtro de título")
@@ -222,3 +239,68 @@ def fetch_jobs(hours_old: int = 24) -> tuple[list[dict], dict]:
 
     print(f"\n✅ Total de vagas únicas encontradas: {len(unique_jobs)}")
     return unique_jobs, stats
+
+
+def _linkedin_job_id(job_url: str) -> str | None:
+    match = re.search(r"/jobs/view/(\d+)", job_url or "")
+    return match.group(1) if match else None
+
+
+def enrich_linkedin_details(jobs: list[dict]) -> dict:
+    """
+    Completa `description` e `url_direct` das vagas do LinkedIn que vieram sem
+    eles. Altera os dicts no lugar. Chame só com vagas novas: 1 request por vaga.
+    Retorna {"fetched": n, "failed": n, "skipped": n}.
+    """
+    stats = {"fetched": 0, "failed": 0, "skipped": 0}
+    targets = [
+        job for job in jobs
+        if job.get("source") == "linkedin" and not job.get("description")
+    ]
+    if not targets:
+        return stats
+    if not LINKEDIN_FETCH_DETAILS:
+        stats["skipped"] = len(targets)
+        return stats
+
+    scraper = LinkedIn()
+    # _get_job_details é interno do JobSpy 1.1.82 e lê o formato da descrição
+    # de scraper_input — que só é preenchido dentro de scrape().
+    scraper.scraper_input = ScraperInput(site_type=[Site.LINKEDIN])
+
+    consecutive_failures = 0
+    for position, job in enumerate(targets):
+        attempts = stats["fetched"] + stats["failed"]
+        if consecutive_failures >= LINKEDIN_DETAILS_MAX_CONSECUTIVE_FAILURES:
+            print("  ⚠️  LinkedIn parou de devolver detalhes (provável limite por IP). Pulando o resto.")
+            stats["skipped"] += len(targets) - position
+            break
+        if attempts >= LINKEDIN_DETAILS_MAX_PER_RUN:
+            stats["skipped"] += len(targets) - position
+            break
+
+        job_id = _linkedin_job_id(job.get("job_url", ""))
+        if job_id is None:
+            stats["skipped"] += 1
+            continue
+
+        if attempts:
+            time.sleep(random.uniform(*LINKEDIN_DETAILS_DELAY_SECONDS))
+        details = scraper._get_job_details(job_id)
+        if not details:  # o JobSpy devolve {} em qualquer falha, inclusive 429
+            stats["failed"] += 1
+            consecutive_failures += 1
+            continue
+
+        consecutive_failures = 0
+        stats["fetched"] += 1
+        if details.get("description"):
+            job["description"] = str(details["description"])[:DESCRIPTION_MAX_CHARS]
+        if details.get("job_url_direct"):
+            job["url_direct"] = str(details["job_url_direct"])
+
+    print(
+        f"🔎 Detalhes do LinkedIn: {stats['fetched']} ok, "
+        f"{stats['failed']} falharam, {stats['skipped']} pulados"
+    )
+    return stats

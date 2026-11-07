@@ -3,7 +3,7 @@
 
 from contextlib import closing
 
-from job_scraper import fetch_jobs
+from job_scraper import fetch_jobs, enrich_linkedin_details
 from tracker import init_db, is_new, save_job, get_pending_jobs, mark_notified, purge_old_jobs
 from notifier import notify_jobs, send_error_alert
 
@@ -30,11 +30,13 @@ def run():
             # 2. Busca vagas
             jobs, scraper_stats = fetch_jobs(hours_old=HOURS_OLD)
 
-            # 3. Salva só as novas (não vistas antes)
+            # 3. Separa as novas (não vistas antes) e completa as do LinkedIn
+            #    com descrição + link do site da empresa antes de salvar
             new_jobs = [job for job in jobs if is_new(conn, job["job_url"])]
+            print(f"\n🆕 Vagas novas (não vistas antes): {len(new_jobs)}")
+            enrich_linkedin_details(new_jobs)
             for job in new_jobs:
                 save_job(conn, job)
-            print(f"\n🆕 Vagas novas (não vistas antes): {len(new_jobs)}")
 
             # 4. Pendentes = novas + as que falharam no envio anterior
             pending = get_pending_jobs(conn)

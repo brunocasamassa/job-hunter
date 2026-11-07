@@ -23,6 +23,7 @@ def test_failed_delivery_stays_pending_and_is_retried(tmp_path, monkeypatch):
     stats = {"requests": 1, "errors": 0}
     runs = iter([[_job(1), _job(2)], []])
     monkeypatch.setattr(main, "fetch_jobs", lambda hours_old: (next(runs), stats))
+    monkeypatch.setattr(main, "enrich_linkedin_details", lambda jobs: None)
 
     sent_batches = []
 
@@ -44,3 +45,21 @@ def test_failed_delivery_stays_pending_and_is_retried(tmp_path, monkeypatch):
     ]
     conn = tracker.init_db(db_path)
     assert tracker.get_pending_jobs(conn) == []
+
+
+def test_linkedin_details_are_saved_with_new_jobs(tmp_path, monkeypatch):
+    db_path = str(tmp_path / "jobs.db")
+    monkeypatch.setattr(main, "init_db", lambda: tracker.init_db(db_path))
+    monkeypatch.setattr(main, "fetch_jobs", lambda hours_old: ([_job(1)], {"requests": 1, "errors": 0}))
+
+    def fake_enrich(jobs):
+        for job in jobs:
+            job["url_direct"] = "https://careers.acme.com/apply/1"
+
+    monkeypatch.setattr(main, "enrich_linkedin_details", fake_enrich)
+    monkeypatch.setattr(main, "notify_jobs", lambda jobs, stats=None: set())  # tudo falha
+
+    main.run()
+
+    conn = tracker.init_db(db_path)
+    assert tracker.get_pending_jobs(conn)[0]["url_direct"] == "https://careers.acme.com/apply/1"
