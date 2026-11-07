@@ -1,7 +1,9 @@
-# scrapers/job_scraper.py
+# job_scraper.py
 # Usa a lib JobSpy que já lida com LinkedIn, Indeed e Glassdoor
 #
 # Glassdoor parou de funcionar? Rode: python glassdoor_manager.py
+
+import re
 
 import pandas as pd
 import logger
@@ -9,6 +11,10 @@ import jobspy_patches  # noqa: F401
 
 SEARCH_TERM = "Android"
 
+# KEYWORDS e BLACKLIST_TITLES não diferenciam maiúsculas/minúsculas.
+# - KEYWORDS casam como trecho do título ("android" pega "Android Engineer").
+# - BLACKLIST_TITLES casam como palavra inteira ("ios" pega "Android/iOS",
+#   mas não "Studios").
 KEYWORDS = [
     "Android",
     "android",
@@ -87,11 +93,68 @@ GLASSDOOR_REGIONS = [
 ]
 
 
+def _compile_blacklist(terms: list[str]) -> re.Pattern:
+    """Regex que casa qualquer termo da blacklist como palavra inteira."""
+    normalized = sorted({t.strip().lower() for t in terms if t.strip()}, key=len, reverse=True)
+    if not normalized:
+        return re.compile(r"(?!)")  # blacklist vazia: nunca casa
+    return re.compile(r"\b(?:" + "|".join(map(re.escape, normalized)) + r")\b")
+
+
+_KEYWORDS_NORMALIZED = tuple({kw.strip().lower() for kw in KEYWORDS if kw.strip()})
+_BLACKLIST_PATTERN = _compile_blacklist(BLACKLIST_TITLES)
+
+
 def is_relevant(title: str) -> bool:
+    """
+    Incluir a mais é barato (você só vê uma vaga extra); excluir a mais custa
+    uma vaga. Por isso keyword casa por trecho e blacklist por palavra inteira.
+    """
     title_lower = title.lower()
-    has_keyword = any(kw in title_lower for kw in KEYWORDS)
-    is_blacklisted = any(term in title_lower for term in BLACKLIST_TITLES)
-    return has_keyword and not is_blacklisted
+    has_keyword = any(kw in title_lower for kw in _KEYWORDS_NORMALIZED)
+    return has_keyword and _BLACKLIST_PATTERN.search(title_lower) is None
+
+
+def _is_missing(value) -> bool:
+    """None, NaN e NaT (o que o pandas devolve em campo vazio)."""
+    if value is None:
+        return True
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):  # listas/arrays não são "vazio"
+        return False
+
+
+def _clean(value, default: str = "N/A") -> str:
+    """Texto do campo, ou `default` se vier vazio (evita 'nan' no Telegram)."""
+    if _is_missing(value):
+        return default
+    text = str(value).strip()
+    return text or default
+
+
+def _format_salary(row) -> str:
+    """'50,000 - 70,000 EUR/yearly', ou '' quando a vaga não informa salário."""
+    amounts = []
+    for key in ("min_amount", "max_amount"):
+        value = row.get(key)
+        if _is_missing(value):
+            continue
+        try:
+            amounts.append(f"{float(value):,.0f}")
+        except (TypeError, ValueError):
+            continue
+    if not amounts:
+        return ""
+
+    text = " - ".join(amounts)
+    currency = _clean(row.get("currency"), default="")
+    interval = _clean(row.get("interval"), default="")
+    if currency:
+        text += f" {currency}"
+    if interval:
+        text += f"/{interval}"
+    return text
 
 
 def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, all_jobs, label=None):
@@ -114,13 +177,13 @@ def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, 
 
             all_jobs.append({
                 "title":       title,
-                "company":     str(row.get("company", "N/A")),
-                "location":    str(row.get("location", "N/A")),
-                "job_url":     str(row.get("job_url", "")),
-                "source":      str(row.get("site", "N/A")),
-                "date_posted": str(row.get("date_posted", "N/A")),
-                "salary":      str(row.get("min_amount", "")) + " - " + str(row.get("max_amount", "")),
-                "description": str(row.get("description", ""))[:500],
+                "company":     _clean(row.get("company")),
+                "location":    _clean(row.get("location")),
+                "job_url":     _clean(row.get("job_url"), default=""),
+                "source":      _clean(row.get("site")),
+                "date_posted": _clean(row.get("date_posted")),
+                "salary":      _format_salary(row),
+                "description": _clean(row.get("description"), default="")[:500],
             })
 
         print(f"  ✅ {kept}/{len(jobs_df)} passaram no filtro de título")
