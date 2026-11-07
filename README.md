@@ -8,15 +8,18 @@ e te notifica no Telegram quando aparecem vagas novas.
 ## 📁 Estrutura
 
 ```
-job_hunter/
-├── scrapers/
-│   └── job_scraper.py   # Busca vagas com JobSpy
-├── tracker.py           # Banco SQLite (evita duplicatas)
-├── notifier.py          # Envia alertas no Telegram
-├── main.py              # Orquestra tudo (rode este)
-├── scheduler.py         # Roda automaticamente todo dia
+job-hunter/
+├── main.py               # Orquestra tudo (rode este)
+├── scheduler.py          # Roda main.py a cada INTERVALO_MINUTOS
+├── job_scraper.py        # Busca vagas com JobSpy + filtro de títulos
+├── tracker.py            # Banco SQLite (evita duplicatas, guarda pendentes)
+├── notifier.py           # Envia alertas no Telegram
+├── jobspy_patches.py     # Workarounds para bugs do JobSpy (Glassdoor)
+├── logger.py             # Logging detalhado do Glassdoor
+├── glassdoor_manager.py  # Testa se o Glassdoor está respondendo
+├── tests/                # Testes (pytest)
 ├── requirements.txt
-└── README.md
+└── requirements-dev.txt
 ```
 
 ---
@@ -30,7 +33,7 @@ job_hunter/
 ### 2. Clone / copie a pasta e instale as dependências
 
 ```bash
-cd job_hunter
+cd job-hunter
 pip install -r requirements.txt
 ```
 
@@ -50,12 +53,12 @@ pip install -r requirements.txt
 2. Envie `/start`
 3. Ele te responde com seu **Id** (ex: `123456789`)
 
-### Passo 3 — Colocar no código
-Abra `notifier.py` e preencha:
+### Passo 3 — Criar o arquivo `.env`
+Na raiz do projeto, crie um arquivo `.env` (ele já está no `.gitignore`):
 
-```python
-TELEGRAM_TOKEN   = "7123456789:AAF..."   # token do BotFather
-TELEGRAM_CHAT_ID = "123456789"           # seu Id do userinfobot
+```
+TELEGRAM_TOKEN=7123456789:AAF...
+TELEGRAM_CHAT_ID=123456789
 ```
 
 ### Passo 4 — Iniciar o bot
@@ -70,7 +73,7 @@ No Telegram, busque seu bot pelo username e envie `/start`.
 python main.py
 ```
 
-### Rodar todo dia automaticamente (deixa o terminal aberto)
+### Rodar automaticamente (deixa o terminal aberto)
 ```bash
 python scheduler.py
 ```
@@ -84,37 +87,37 @@ nohup python scheduler.py > log.txt 2>&1 &
 
 ## ⚙️ Personalizar
 
-### Mudar palavras-chave de busca
-Em `scrapers/job_scraper.py`:
+### Palavras-chave e títulos indesejados
+Em `job_scraper.py`. Maiúsculas/minúsculas não importam.
+- `KEYWORDS` casa como trecho do título (`"android"` pega "Senior Android Engineer").
+- `BLACKLIST_TITLES` casa como palavra inteira (`"ios"` pega "Android/iOS", mas não "Studios").
+
 ```python
-KEYWORDS = [
-    "Android Developer",
-    "Desenvolvedor Android",
-    "Mobile Engineer Kotlin",
-    # adicione mais aqui
-]
+KEYWORDS = ["Android", "Automotive", "AOSP", "mobile"]
+BLACKLIST_TITLES = ["react native", "flutter", "ios"]
 ```
 
-### Filtrar títulos indesejados
+### Detalhes das vagas do LinkedIn
+A busca do LinkedIn não traz descrição nem o link de candidatura no site da
+empresa. O `job_scraper.py` busca esses detalhes só das vagas **novas**
+(1 request por vaga, com teto por execução):
+
 ```python
-BLACKLIST_TITLES = [
-    "react native",
-    "flutter",
-    "ios only",
-    # adicione mais aqui
-]
+LINKEDIN_FETCH_DETAILS = True        # False desliga
+LINKEDIN_DETAILS_MAX_PER_RUN = 60
 ```
 
-### Mudar horário do agendador
+### Intervalo do agendador
 Em `scheduler.py`:
 ```python
-HORARIO = "09:00"   # qualquer horário HH:MM
+INTERVALO_MINUTOS = 720   # 12 horas
 ```
 
-### Buscar vagas mais antigas
-Em `main.py`, na chamada `fetch_jobs`:
+### Janela da busca e histórico
+Em `main.py`:
 ```python
-jobs = fetch_jobs(hours_old=48)   # últimas 48h
+HOURS_OLD = 24       # só vagas publicadas nas últimas 24h
+HISTORY_DAYS = 180   # quanto tempo lembrar das vagas já vistas
 ```
 
 ---
@@ -130,8 +133,12 @@ jobs = fetch_jobs(hours_old=48)   # últimas 48h
 🏢 Nubank
 📍 São Paulo, SP • Remoto
 📅 2026-03-31
-🔗 Ver vaga  ← link clicável
+🔗 Ver vaga                     ← link clicável
+🎯 Aplicar no site da empresa   ← quando a vaga tem link próprio
 ```
+
+Se alguma mensagem falhar (Telegram fora do ar, limite de envio), a vaga fica
+pendente no banco e é reenviada na próxima execução.
 
 ---
 
@@ -153,11 +160,24 @@ for j in jobs:
 
 ---
 
+## 🧪 Testes
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Os testes não acessam a internet: LinkedIn, JobSpy e Telegram são simulados.
+
+---
+
 ## ❓ Problemas comuns
 
 | Problema | Solução |
 |---|---|
 | `ModuleNotFoundError: jobspy` | `pip install -r requirements.txt` |
+| `KeyError: 'TELEGRAM_TOKEN'` | Crie o `.env` (Passo 3) |
 | Telegram não recebe | Confirme token e chat_id; envie `/start` pro bot |
-| Nenhuma vaga encontrada | Aumente `hours_old=72` em `main.py` |
-| LinkedIn bloqueou | JobSpy já rotaciona headers; tente novamente em 10min |
+| Nenhuma vaga encontrada | Aumente `HOURS_OLD = 72` em `main.py` |
+| LinkedIn bloqueou | JobSpy já rotaciona headers; tente novamente mais tarde |
+| "Detalhes do LinkedIn: 0 ok, 3 falharam" | Limite por IP; ponha `LINKEDIN_FETCH_DETAILS = False` por um tempo |
