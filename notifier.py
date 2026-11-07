@@ -1,15 +1,48 @@
 # notifier.py
 # Envia alerta das vagas novas via Telegram
 
+import html
 import os
-import requests
+import time
 from datetime import datetime
+
+import requests
 from dotenv import load_dotenv
 
 load_dotenv()
 
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+
+# O Telegram limita mensagens seguidas no mesmo chat: espaçamos os envios e,
+# se ele responder 429, esperamos o tempo que ele pede em `retry_after`.
+SEND_INTERVAL_SECONDS = 1.0
+MAX_RETRIES_ON_RATE_LIMIT = 3
+DEFAULT_RETRY_AFTER_SECONDS = 5
+
+
+def _esc(value) -> str:
+    """Escapa texto para o parse_mode HTML (um '&' cru faz o Telegram recusar a mensagem)."""
+    return html.escape("" if value is None else str(value), quote=True)
+
+
+def _redact(text: str) -> str:
+    """Tira o token de mensagens de erro: exceções do requests incluem a URL."""
+    return text.replace(TELEGRAM_TOKEN, "***") if TELEGRAM_TOKEN else text
+
+
+def _retry_after_seconds(resp: requests.Response) -> int:
+    try:
+        return int(resp.json()["parameters"]["retry_after"])
+    except (ValueError, KeyError, TypeError):
+        return DEFAULT_RETRY_AFTER_SECONDS
+
+
+def _error_description(resp: requests.Response) -> str:
+    try:
+        return str(resp.json().get("description", ""))
+    except (ValueError, AttributeError):
+        return resp.text[:200]
 
 
 def send_telegram(message: str) -> bool:
@@ -21,35 +54,48 @@ def send_telegram(message: str) -> bool:
         "parse_mode": "HTML",
         "disable_web_page_preview": False,
     }
-    try:
-        resp = requests.post(url, json=payload, timeout=10)
-        return resp.status_code == 200
-    except Exception as e:
-        print(f"❌ Erro ao enviar Telegram: {e}")
+    for attempt in range(MAX_RETRIES_ON_RATE_LIMIT + 1):
+        try:
+            resp = requests.post(url, json=payload, timeout=10)
+        except requests.RequestException as e:
+            print(f"❌ Erro ao enviar Telegram: {_redact(str(e))}")
+            return False
+
+        if resp.status_code == 200:
+            return True
+        if resp.status_code == 429 and attempt < MAX_RETRIES_ON_RATE_LIMIT:
+            wait = _retry_after_seconds(resp)
+            print(f"⏳ Telegram pediu pausa de {wait}s (429). Tentando de novo...")
+            time.sleep(wait)
+            continue
+
+        print(f"❌ Telegram recusou a mensagem ({resp.status_code}): {_error_description(resp)}")
         return False
+    return False
 
 
 def format_job_message(job: dict, index: int, total: int) -> str:
     """Formata a mensagem de uma vaga para o Telegram."""
-    salary = job["salary"].strip(" -")
-    salary_line = f"💰 <b>Salário:</b> {salary}\n" if salary and salary != "-" else ""
+    salary = (job.get("salary") or "").strip(" -")
+    salary_line = f"💰 <b>Salário:</b> {_esc(salary)}\n" if salary else ""
 
     return (
-        f"🤖 <b>Vaga {index}/{total} — {job['source'].upper()}</b>\n"
+        f"🤖 <b>Vaga {index}/{total} — {_esc(str(job['source']).upper())}</b>\n"
         f"━━━━━━━━━━━━━━━━\n"
-        f"📱 <b>{job['title']}</b>\n"
-        f"🏢 {job['company']}\n"
-        f"📍 {job['location']}\n"
-        f"📅 {job['date_posted']}\n"
+        f"📱 <b>{_esc(job['title'])}</b>\n"
+        f"🏢 {_esc(job['company'])}\n"
+        f"📍 {_esc(job['location'])}\n"
+        f"📅 {_esc(job['date_posted'])}\n"
         f"{salary_line}"
-        f"🔗 <a href='{job['job_url']}'>Ver vaga</a>"
+        f"🔗 <a href=\"{_esc(job['job_url'])}\">Ver vaga</a>"
     )
 
 
-def notify_jobs(new_jobs: list[dict], stats: dict | None = None) -> None:
+def notify_jobs(new_jobs: list[dict], stats: dict | None = None) -> set[str]:
     """
-    Envia resultado da execução no Telegram.
+    Envia resultado da execução no Telegram e retorna as URLs entregues.
     Sempre dispara — com vagas novas mostra cada uma, sem vagas informa o status.
+    Quem chama deve marcar como notificadas só as URLs retornadas.
     """
     now = datetime.now().strftime("%H:%M • %d/%m/%Y")
     stats = stats or {}
@@ -59,6 +105,7 @@ def notify_jobs(new_jobs: list[dict], stats: dict | None = None) -> None:
         if stats
         else ""
     )
+    delivered: set[str] = set()
 
     if not new_jobs:
         send_telegram(
@@ -67,7 +114,7 @@ def notify_jobs(new_jobs: list[dict], stats: dict | None = None) -> None:
             f"{stats_line}"
         )
         print("📭 Nenhuma vaga nova para notificar.")
-        return
+        return delivered
 
     total = len(new_jobs)
 
@@ -79,14 +126,23 @@ def notify_jobs(new_jobs: list[dict], stats: dict | None = None) -> None:
     )
 
     for i, job in enumerate(new_jobs, start=1):
-        msg = format_job_message(job, i, total)
-        ok = send_telegram(msg)
-        if ok:
+        time.sleep(SEND_INTERVAL_SECONDS)
+        if send_telegram(format_job_message(job, i, total)):
+            delivered.add(job["job_url"])
             print(f"  📨 Enviado: {job['title']} @ {job['company']}")
         else:
             print(f"  ❌ Falha: {job['title']}")
 
-    send_telegram("✅ Fim das vagas novas. Boa sorte nas candidaturas! 🚀")
+    time.sleep(SEND_INTERVAL_SECONDS)
+    failed = total - len(delivered)
+    if failed:
+        send_telegram(
+            f"⚠️ {failed} vaga(s) não foram enviadas — "
+            f"tento de novo na próxima execução."
+        )
+    else:
+        send_telegram("✅ Fim das vagas novas. Boa sorte nas candidaturas! 🚀")
+    return delivered
 
 
 def send_heartbeat(stats: dict) -> None:
@@ -114,7 +170,7 @@ def send_error_alert(error: str) -> None:
     message = (
         f"🔴 <b>Job Hunter — ERRO CRÍTICO</b>\n"
         f"⏰ {now}\n"
-        f"💥 <code>{error[:300]}</code>\n"
+        f"💥 <code>{_esc(_redact(error)[:300])}</code>\n"
         f"⚠️ O bot pode ter parado. Verifique o terminal."
     )
     send_telegram(message)
