@@ -33,10 +33,7 @@ DESCRIPTION_MAX_CHARS = 20_000
 #   mas não "Studios").
 KEYWORDS = [
     "Android",
-    "android",
     "Automotive",
-    "AOSP",
-    "mobile"
 ]
 
 BLACKLIST_TITLES = [

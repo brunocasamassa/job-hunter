@@ -5,12 +5,11 @@ from job_scraper import _clean, _format_salary, is_relevant
 
 
 @pytest.mark.parametrize("title", [
-    "Senior AOSP Engineer",
     "Infotainment Software Engineer - Automotive",
     "Android Automotive Developer",
     "Android Engineer, Games Studios",
     "Senior Android Developer (Kotlin)",
-    "Senior Mobile Engineer",
+    "AUTOMOTIVE Embedded Engineer",
 ])
 def test_relevant_titles_pass(title):
     assert is_relevant(title)
@@ -19,17 +18,22 @@ def test_relevant_titles_pass(title):
 @pytest.mark.parametrize("title", [
     "Backend Developer - Android APIs",
     "Android QA - Quality Assurance",
-    "Mobile Developer (Flutter)",
+    "Android Developer (Flutter)",
     "React Native Developer (Android/iOS)",
-    "iOS Developer",
     "Android & iOS Engineer",
+    "Automotive Fullstack Engineer",
 ])
 def test_blacklisted_titles_are_dropped(title):
     assert not is_relevant(title)
 
 
-def test_title_without_keyword_is_dropped():
-    assert not is_relevant("Senior Backend Engineer")
+@pytest.mark.parametrize("title", [
+    "Senior AOSP Engineer",
+    "Senior Mobile Engineer",
+    "Senior Backend Engineer",
+])
+def test_title_without_android_or_automotive_is_dropped(title):
+    assert not is_relevant(title)
 
 
 def test_empty_blacklist_blocks_nothing():

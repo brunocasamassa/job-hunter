@@ -93,7 +93,7 @@ Em `job_scraper.py`. Maiúsculas/minúsculas não importam.
 - `BLACKLIST_TITLES` casa como palavra inteira (`"ios"` pega "Android/iOS", mas não "Studios").
 
 ```python
-KEYWORDS = ["Android", "Automotive", "AOSP", "mobile"]
+KEYWORDS = ["Android", "Automotive"]
 BLACKLIST_TITLES = ["react native", "flutter", "ios"]
 ```
 
