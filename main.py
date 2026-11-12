@@ -1,6 +1,7 @@
 # main.py
 # Orquestra scraping → filtragem → banco → notificação
 
+import sys
 from contextlib import closing
 from datetime import datetime
 
@@ -8,6 +9,7 @@ from dedupe import fingerprint, split_duplicates
 from eligibility import FREE_MOVEMENT_COUNTRIES, HOME_COUNTRY, INELIGIBLE, classify
 from job_scraper import fetch_jobs, enrich_linkedin_details
 from notifier import notify_jobs, send_error_alert
+from radar import fetch_radar_jobs
 from ranking import score
 from tracker import (
     first_seen, get_pending_jobs, init_db, is_new, mark_notified, purge_old_jobs, save_job,
@@ -148,5 +150,52 @@ def run():
         raise
 
 
+def run_radar():
+    """
+    Radar de ATS (radar.py). Mesmo caminho das vagas do JobSpy — dedup,
+    elegibilidade, nota, banco —, mas só manda mensagem quando há o que enviar:
+    ele roda de hora em hora.
+    """
+    print("\n" + "=" * 45)
+    print("  📡 RADAR — sites de vagas das empresas")
+    print("=" * 45 + "\n")
+
+    try:
+        with closing(init_db()) as conn:
+            jobs, radar_stats = fetch_radar_jobs(is_known=lambda url: not is_new(conn, url))
+            counts = process_new_jobs(conn, jobs)
+            print(
+                f"\n🆕 {len(jobs)} vaga(s) nova(s) no radar: {counts['to_send']} para enviar, "
+                f"{counts['hidden']} oculta(s) (exigem visto), "
+                f"{counts['duplicates']} repetida(s), {counts['reposts']} republicada(s)"
+            )
+
+            # Pendentes incluem as que falharam no envio anterior (de qualquer origem).
+            pending = get_pending_jobs(conn)
+            if pending:
+                delivered = notify_jobs(
+                    pending, stats=radar_stats, hidden_count=counts["hidden"], title="📡 Radar",
+                )
+                for url in delivered:
+                    mark_notified(conn, url)
+                failed = len(pending) - len(delivered)
+                if failed:
+                    print(f"⚠️  {failed} vaga(s) não entregue(s) — ficam pendentes para a próxima execução.")
+            else:
+                print("Nada novo no radar.")
+
+        print("\n✅ Radar concluído!\n")
+
+    except Exception as e:
+        print(f"\n💥 Erro crítico no radar: {e}")
+        send_error_alert(f"Radar: {e}")
+        raise
+
+
 if __name__ == "__main__":
-    run()
+    # python main.py         → sites de vagas (LinkedIn, Indeed, Glassdoor)
+    # python main.py radar   → radar de ATS
+    if sys.argv[1:] == ["radar"]:
+        run_radar()
+    else:
+        run()

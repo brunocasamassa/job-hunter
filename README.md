@@ -1,7 +1,8 @@
 # 🤖 Job Hunter — Android Developer
 
-Radar automático de vagas que busca no LinkedIn, Indeed e Glassdoor
-e te notifica no Telegram quando aparecem vagas novas.
+Radar automático de vagas que busca no LinkedIn, Indeed e Glassdoor — e direto
+nos sites de vagas de empresas escolhidas (Greenhouse, Lever, Ashby) — e te
+notifica no Telegram quando aparecem vagas novas.
 
 ---
 
@@ -10,8 +11,11 @@ e te notifica no Telegram quando aparecem vagas novas.
 ```
 job-hunter/
 ├── main.py               # Orquestra tudo (rode este)
-├── scheduler.py          # Roda main.py a cada INTERVALO_MINUTOS
+├── scheduler.py          # Agenda os sites de vagas e o radar
 ├── job_scraper.py        # Busca vagas com JobSpy + filtro de títulos
+├── radar.py              # Radar de ATS: empresas escolhidas e filtros
+├── ats.py                # APIs públicas do Greenhouse, Lever e Ashby
+├── locations.py          # País da vaga a partir do local ("Kraków", "Remote - EU")
 ├── eligibility.py        # Você pode trabalhar na vaga? (país, visto, idioma)
 ├── dedupe.py             # Mesma vaga em sites diferentes / republicada
 ├── ranking.py            # Nota de 0 a 10 para ordenar o resumo
@@ -73,18 +77,62 @@ No Telegram, busque seu bot pelo username e envie `/start`.
 
 ### Rodar uma vez agora
 ```bash
-python main.py
+python main.py         # LinkedIn, Indeed e Glassdoor
+python main.py radar   # radar de ATS
 ```
 
 ### Rodar automaticamente (deixa o terminal aberto)
 ```bash
-python scheduler.py
+python scheduler.py   # sites de vagas a cada 12 h, radar a cada 1 h; os dois rodam já na largada
 ```
 
 ### Rodar em background (Linux/Mac)
 ```bash
 nohup python scheduler.py > log.txt 2>&1 &
 ```
+
+---
+
+## 📡 Radar de ATS
+
+Lê direto as vagas abertas de empresas escolhidas, nas APIs públicas de vagas
+do Greenhouse, do Lever e do Ashby (feitas para as empresas montarem suas
+páginas de carreira; não precisam de chave). A vaga chega em até uma hora
+depois de publicada, e o link leva à candidatura no sistema da própria empresa,
+sem passar pelo LinkedIn.
+
+- Roda a cada `RADAR_INTERVALO_MINUTOS` (60, em `scheduler.py`; 0 desliga).
+- Só manda mensagem quando há vaga nova. O resumo vem com o título `📡 Radar`.
+- Na primeira vez chegam todas as vagas abertas que passarem nos filtros;
+  depois, só as novas.
+- Passa pelo mesmo caminho das outras vagas: filtro de título, elegibilidade,
+  nota e dedup. Se a vaga já chegou pelo LinkedIn (mesma empresa, título e
+  país), não chega de novo.
+- Como o radar recebe **todas** as vagas da empresa, a vaga também precisa citar
+  Android, AAOS ou AOSP no título ou na descrição (`RADAR_REQUIRED_TERMS`).
+- A mesma vaga publicada em vários países (o Lever faz uma por local) vira um
+  alerta só, com os locais juntos.
+- Cada vaga mostra há quanto tempo foi publicada (`📅 há 3 dias`). Algumas
+  empresas deixam a mesma vaga aberta por meses; para esconder as antigas, use
+  `RADAR_MAX_AGE_DAYS` em `radar.py`.
+
+### Incluir uma empresa
+Abra a página de vagas dela e veja o endereço:
+
+| Endereço da vaga | Em `radar.BOARDS` |
+|---|---|
+| `boards.greenhouse.io/<token>` ou `job-boards.greenhouse.io/<token>` | `Board("Empresa", GREENHOUSE, "<token>")` |
+| `job-boards.eu.greenhouse.io/<token>` | `Board("Empresa", GREENHOUSE_EU, "<token>")` |
+| `jobs.lever.co/<token>` | `Board("Empresa", LEVER, "<token>")` |
+| `jobs.eu.lever.co/<token>` | `Board("Empresa", LEVER_EU, "<token>")` |
+| `jobs.ashbyhq.com/<token>` | `Board("Empresa", ASHBY, "<token>")` |
+
+- No Greenhouse e no Lever, se errar a região (EU ou não), o radar tenta a
+  outra e avisa no log.
+- No Lever dá para filtrar pelo time e baixar menos dados:
+  `Board("Finom", LEVER_EU, "pnlfin", {"team": "Android"})`.
+- Empresas em outros sistemas (Workday, Teamtailor, SmartRecruiters ou site
+  próprio) ainda não entram: o radar só lê os três acima.
 
 ---
 
@@ -168,7 +216,8 @@ LINKEDIN_DETAILS_MAX_PER_RUN = 60
 ### Intervalo do agendador
 Em `scheduler.py`:
 ```python
-INTERVALO_MINUTOS = 720   # 12 horas
+INTERVALO_MINUTOS = 720        # sites de vagas: 12 horas
+RADAR_INTERVALO_MINUTOS = 60   # radar de ATS: 1 hora (0 desliga)
 ```
 
 ### Janela da busca e histórico
@@ -183,19 +232,19 @@ HISTORY_DAYS = 180   # quanto tempo lembrar das vagas já vistas
 ## 📨 O que chega no Telegram
 
 Um resumo por execução, maior nota primeiro (quebrado em várias mensagens se
-for longo):
+for longo). O do radar tem o título `📡 Radar`:
 
 ```
 🔔 Job Hunter — 5 vaga(s)
 ⏰ 17:05 • 12/11/2026
-🔍 Buscas: 41 | ✅ Erros: 0
+🔍 Buscas: 34 | ✅ Erros: 0
 🙈 1 oculta(s): exigem visto/residência
 
 ✅ Pode aplicar
 
 1. ⭐8 Senior Android Automotive Engineer
 🏢 ACME · 📍 Munich, BY, DE · INDEED
-🇪🇺 UE/EEE/Suíça — sem visto · 🗣️ exige alemão · 💰 75,000 - 95,000 EUR/yearly
+🇪🇺 UE/EEE/Suíça — sem visto · 📅 hoje · 🗣️ exige alemão · 💰 75,000 - 95,000 EUR/yearly
 🔗 Ver vaga · 🎯 Aplicar no site da empresa
 
 2. ⭐7 Senior Android Engineer
@@ -241,7 +290,8 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-Os testes não acessam a internet: LinkedIn, JobSpy e Telegram são simulados.
+Os testes não acessam a internet: LinkedIn, JobSpy, as APIs dos ATS e o
+Telegram são simulados.
 
 ---
 
@@ -255,3 +305,5 @@ Os testes não acessam a internet: LinkedIn, JobSpy e Telegram são simulados.
 | Nenhuma vaga encontrada | Aumente `HOURS_OLD = 72` em `main.py` |
 | LinkedIn bloqueou | JobSpy já rotaciona headers; tente novamente mais tarde |
 | "Detalhes do LinkedIn: 0 ok, 3 falharam" | Limite por IP; ponha `LINKEDIN_FETCH_DETAILS = False` por um tempo |
+| Radar: `❌ Empresa (...): 404` | Token errado ou a empresa trocou de sistema; confira o endereço da página de vagas |
+| Radar: `o board está em ...` | Ajuste a região (`GREENHOUSE_EU`, `LEVER_EU`...) em `radar.BOARDS` |

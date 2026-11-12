@@ -1,6 +1,6 @@
 import pytest
 
-from eligibility import ELIGIBLE, INELIGIBLE, MAYBE, classify, required_languages
+from eligibility import EUROPE, ELIGIBLE, INELIGIBLE, MAYBE, classify, required_languages
 
 
 def _job(country, description="", location="", title="Senior Android Engineer"):
@@ -14,8 +14,25 @@ def test_free_movement_countries_are_eligible(country):
     assert "UE" in result.reason
 
 
+def test_europe_without_country_is_eligible():
+    result = classify(_job(EUROPE, "Remote within the EU."))
+    assert result.status == ELIGIBLE
+
+
 def test_brazil_is_eligible():
     assert classify(_job("brazil")).status == ELIGIBLE
+
+
+def test_unknown_country_goes_to_check_instead_of_hidden():
+    # Radar: locations.py não reconheceu o local. Pode ser uma cidade da UE.
+    result = classify(_job("", "Build our Android app.", location="Springfield"))
+    assert result.status == MAYBE
+    assert "Local não reconhecido" in result.reason
+
+
+def test_unknown_country_with_local_authorization_only_is_ineligible():
+    result = classify(_job("", "You must be authorized to work in the United States.", location="Springfield"))
+    assert result.status == INELIGIBLE
 
 
 @pytest.mark.parametrize("description", [
