@@ -123,7 +123,8 @@ def _logged_tls_execute(
 tls_client.Session.execute_request = _logged_tls_execute
 
 
-def debug_scrape(site_names, search_term, location, country_indeed, hours_old, results_wanted=20):
+def debug_scrape(site_names, search_term, location, country_indeed, hours_old,
+                 results_wanted=20, is_remote=False):
     """
     Wrapper em scrape_jobs com logging detalhado:
       - antes da chamada, imprime o fallback_token do Glassdoor (se aplicável);
@@ -149,6 +150,7 @@ def debug_scrape(site_names, search_term, location, country_indeed, hours_old, r
             results_wanted=results_wanted,
             hours_old=hours_old,
             country_indeed=country_indeed,
+            is_remote=is_remote,
             verbose=2,
         )
     except Exception as e:

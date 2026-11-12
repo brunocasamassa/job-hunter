@@ -13,7 +13,12 @@ import jobspy_patches  # noqa: F401
 from jobspy.linkedin import LinkedIn
 from jobspy.model import ScraperInput, Site
 
-SEARCH_TERM = "Android"
+# Termos enviados às buscas. Cada termo repete o ciclo inteiro de buscas
+# (todas as REGIONS + GLASSDOOR_REGIONS), então cada termo a mais custa
+# mais requests — e o LinkedIn limita por IP.
+SEARCH_TERMS = [
+    "Android",
+]
 
 # A busca do LinkedIn não traz descrição nem o link de candidatura no site da
 # empresa. Buscamos esses detalhes só das vagas NOVAS, 1 request por vaga.
@@ -48,61 +53,70 @@ BLACKLIST_TITLES = [
 
 ]
 
-# (location, country_indeed) — location é usado pelo LinkedIn/Glassdoor,
+# Modo de busca por país:
+# - ALL:    todas as vagas (presencial, híbrida, remota) — países onde você
+#           pode trabalhar: UE/EEE/Suíça (cidadania italiana), Brasil e
+#           Mercosul (residência facilitada para brasileiros).
+# - REMOTE: só vagas remotas — países que exigem visto; presencial lá
+#           seria descartado pelo filtro de elegibilidade de qualquer jeito.
+ALL = "all"
+REMOTE = "remote"
+
+# (location, country_indeed, modo) — location é usado pelo LinkedIn/Glassdoor,
 # country_indeed restringe o domínio regional do Indeed.
 REGIONS = [
     # América do Sul
-    ("Brasil",    "Brazil"),
-    ("Argentina", "Argentina"),
-    ("Colombia",  "Colombia"),
-    ("Chile",     "Chile"),
+    ("Brasil",    "Brazil",    ALL),
+    ("Argentina", "Argentina", ALL),     # Mercosul
+    ("Colombia",  "Colombia",  ALL),     # Mercosul
+    ("Chile",     "Chile",     ALL),     # Mercosul
     # América do Norte
-    ("United States", "USA"),
-    ("Canada",        "Canada"),
-    ("Mexico",        "Mexico"),
+    ("United States", "USA",    REMOTE),
+    ("Canada",        "Canada", REMOTE),
+    ("Mexico",        "Mexico", REMOTE),
     # Europa
-    ("United Kingdom", "UK"),
-    ("Germany",        "Germany"),
-    ("Netherlands",    "Netherlands"),
-    ("Portugal",       "Portugal"),
-    ("Spain",          "Spain"),
-    ("France",         "France"),
-    ("Sweden",         "Sweden"),
-    ("Switzerland",    "Switzerland"),
-    ("Ireland",        "Ireland"),
-    ("Poland",         "Poland"),
+    ("United Kingdom", "UK",          REMOTE),  # cidadão da UE precisa de visto desde 2021
+    ("Germany",        "Germany",     ALL),
+    ("Netherlands",    "Netherlands", ALL),
+    ("Portugal",       "Portugal",    ALL),
+    ("Spain",          "Spain",       ALL),
+    ("France",         "France",      ALL),
+    ("Sweden",         "Sweden",      ALL),
+    ("Switzerland",    "Switzerland", ALL),
+    ("Ireland",        "Ireland",     ALL),
+    ("Poland",         "Poland",      ALL),
     # Leste Europeu
-    ("Czech Republic", "Czech Republic"),
-    ("Hungary",        "Hungary"),
-    ("Slovakia",       "Slovakia"),
-    ("Bulgaria",       "Bulgaria"),
-    ("Croatia",        "Croatia"),
-    ("Lithuania",      "Lithuania"),
-    ("Latvia",         "Latvia"),
-    ("Estonia",        "Estonia"),
+    ("Czech Republic", "Czech Republic", ALL),
+    ("Hungary",        "Hungary",        ALL),
+    ("Slovakia",       "Slovakia",       ALL),
+    ("Bulgaria",       "Bulgaria",       ALL),
+    ("Croatia",        "Croatia",        ALL),
+    ("Lithuania",      "Lithuania",      ALL),
+    ("Latvia",         "Latvia",         ALL),
+    ("Estonia",        "Estonia",        ALL),
     # Ásia
-    ("Thailand",       "Thailand"),
-    ("Singapore",      "Singapore"),
-    ("Indonesia",      "Indonesia"),
+    ("Thailand",  "Thailand",  REMOTE),
+    ("Singapore", "Singapore", REMOTE),
+    ("Indonesia", "Indonesia", REMOTE),
 ]
 
 # Países com domínio Glassdoor próprio no enum do JobSpy.
 # Demais países em REGIONS lançam `Glassdoor is not available for X` —
 # por isso a lista do Glassdoor é separada da do LinkedIn/Indeed.
 GLASSDOOR_REGIONS = [
-    ("Brasil",         "Brazil"),
-    ("Argentina",      "Argentina"),
-    ("United States",  "USA"),
-    ("Canada",         "Canada"),
-    ("Mexico",         "Mexico"),
-    ("United Kingdom", "UK"),
-    ("Germany",        "Germany"),
-    ("Netherlands",    "Netherlands"),
-    ("Spain",          "Spain"),
-    ("France",         "France"),
-    ("Switzerland",    "Switzerland"),
-    ("Ireland",        "Ireland"),
-    ("Singapore",      "Singapore"),
+    ("Brasil",         "Brazil",      ALL),
+    ("Argentina",      "Argentina",   ALL),
+    ("United States",  "USA",         REMOTE),
+    ("Canada",         "Canada",      REMOTE),
+    ("Mexico",         "Mexico",      REMOTE),
+    ("United Kingdom", "UK",          REMOTE),
+    ("Germany",        "Germany",     ALL),
+    ("Netherlands",    "Netherlands", ALL),
+    ("Spain",          "Spain",       ALL),
+    ("France",         "France",      ALL),
+    ("Switzerland",    "Switzerland", ALL),
+    ("Ireland",        "Ireland",     ALL),
+    ("Singapore",      "Singapore",   REMOTE),
 ]
 
 
@@ -170,13 +184,20 @@ def _format_salary(row) -> str:
     return text
 
 
-def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, all_jobs, label=None):
-    label = label or location
-    print(f"\n🔍 Buscando: '{SEARCH_TERM}' em {label} ({', '.join(site_names)})...")
+def _as_bool(value) -> bool:
+    return False if _is_missing(value) else bool(value)
+
+
+def _scrape_and_collect(site_names, search_term, location, country_indeed, mode,
+                        hours_old, stats, all_jobs):
+    remote_only = mode == REMOTE
+    scope = " (só remotas)" if remote_only else ""
+    print(f"\n🔍 Buscando: '{search_term}' em {location}{scope} ({', '.join(site_names)})...")
     stats["requests"] += 1
     try:
         jobs_df = logger.debug_scrape(
-            site_names, SEARCH_TERM, location, country_indeed, hours_old
+            site_names, search_term, location, country_indeed, hours_old,
+            is_remote=remote_only,
         )
         if jobs_df is None or jobs_df.empty:
             return
@@ -198,6 +219,8 @@ def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, 
                 "salary":      _format_salary(row),
                 "url_direct":  _clean(row.get("job_url_direct"), default=""),
                 "description": _clean(row.get("description"), default="")[:DESCRIPTION_MAX_CHARS],
+                "country":     country_indeed.lower(),
+                "is_remote":   _as_bool(row.get("is_remote")),
             })
 
         print(f"  ✅ {kept}/{len(jobs_df)} passaram no filtro de título")
@@ -208,23 +231,26 @@ def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, 
 
 def fetch_jobs(hours_old: int = 24) -> tuple[list[dict], dict]:
     """
-    Busca vagas nos últimos `hours_old` horas em múltiplas regiões.
+    Busca vagas nos últimos `hours_old` horas, para cada termo de SEARCH_TERMS:
     - LinkedIn + Indeed: todas as regiões em REGIONS
-    - Glassdoor: apenas regiões em GLASSDOOR_REGIONS (usa glassdoor.com)
+    - Glassdoor: apenas regiões em GLASSDOOR_REGIONS
+    Regiões em modo REMOTE buscam só vagas remotas.
     Retorna (jobs, stats) onde stats = {"requests": int, "errors": int}.
     """
     all_jobs = []
     stats = {"requests": 0, "errors": 0}
 
-    for location, country_indeed in REGIONS:
-        _scrape_and_collect(
-            ["indeed", "linkedin"], location, country_indeed, hours_old, stats, all_jobs
-        )
-
-    for location, country_indeed in GLASSDOOR_REGIONS:
-        _scrape_and_collect(
-            ["glassdoor"], location, country_indeed, hours_old, stats, all_jobs
-        )
+    for search_term in SEARCH_TERMS:
+        for location, country_indeed, mode in REGIONS:
+            _scrape_and_collect(
+                ["indeed", "linkedin"], search_term, location, country_indeed, mode,
+                hours_old, stats, all_jobs,
+            )
+        for location, country_indeed, mode in GLASSDOOR_REGIONS:
+            _scrape_and_collect(
+                ["glassdoor"], search_term, location, country_indeed, mode,
+                hours_old, stats, all_jobs,
+            )
 
     # Remove duplicatas pelo link
     seen = set()
