@@ -42,11 +42,12 @@ def runs(monkeypatch):
 @pytest.fixture
 def sent(monkeypatch):
     """Registra o que foi para o Telegram; por padrão tudo é entregue."""
-    record = {"batches": [], "hidden": [], "fail": set()}
+    record = {"batches": [], "hidden": [], "titles": [], "fail": set()}
 
-    def fake_notify(jobs, stats=None, hidden_count=0):
+    def fake_notify(jobs, stats=None, hidden_count=0, title="🔔 Job Hunter"):
         record["batches"].append([j["job_url"] for j in jobs])
         record["hidden"].append(hidden_count)
+        record["titles"].append(title)
         return {j["job_url"] for j in jobs} - record["fail"]
 
     monkeypatch.setattr(main, "notify_jobs", fake_notify)
@@ -130,3 +131,54 @@ def test_linkedin_details_only_for_jobs_that_will_be_analyzed(db, runs, sent, mo
 
     # sem a repetida, e quem depende da descrição para elegibilidade (EUA) primeiro
     assert enriched == ["https://example.com/jobs/2", "https://example.com/jobs/1"]
+
+
+@pytest.fixture
+def radar_runs(monkeypatch):
+    """Cada item é o resultado de fetch_radar_jobs de uma execução do radar."""
+    batches, known_checks = [], []
+
+    def fake_fetch(is_known):
+        jobs = batches.pop(0)
+        known_checks.append([is_known(job["job_url"]) for job in jobs])
+        return [job for job in jobs if not is_known(job["job_url"])], {"requests": 2, "errors": 0}
+
+    monkeypatch.setattr(main, "fetch_radar_jobs", fake_fetch)
+    return batches, known_checks
+
+
+def test_radar_sends_only_when_there_is_something_new(db, radar_runs, sent):
+    batches, _ = radar_runs
+    batches.extend([[_job(1, source="greenhouse")], []])
+
+    main.run_radar()
+    main.run_radar()
+
+    assert sent["batches"] == [["https://example.com/jobs/1"]]  # a 2ª rodada não manda nada
+    assert sent["titles"] == ["📡 Radar"]
+
+
+def test_radar_sees_jobs_already_in_the_database(db, runs, radar_runs, sent):
+    batches, known_checks = radar_runs
+    runs.append([_job(1)])
+    main.run()
+
+    batches.append([_job(1), _job(2, title="Android Platform Engineer", source="lever")])
+    main.run_radar()
+
+    assert known_checks == [[True, False]]
+    assert sent["batches"][-1] == ["https://example.com/jobs/2"]
+
+
+def test_radar_suppresses_job_already_found_on_another_site(db, runs, radar_runs, sent):
+    batches, _ = radar_runs
+    runs.append([_job(1, source="linkedin", title="Senior Android Engineer")])
+    main.run()
+
+    # mesma empresa, título e país, com a URL do ATS
+    batches.append([_job(2, source="ashby", title="Senior Android Engineer")])
+    main.run_radar()
+
+    assert len(sent["batches"]) == 1
+    saved = {row["url"]: row for row in tracker.get_all_jobs(tracker.init_db(db))}
+    assert saved["https://example.com/jobs/2"]["suppressed"] == "duplicate"

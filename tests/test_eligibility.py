@@ -1,6 +1,6 @@
 import pytest
 
-from eligibility import ELIGIBLE, INELIGIBLE, MAYBE, classify, required_languages
+from eligibility import EUROPE, ELIGIBLE, INELIGIBLE, MAYBE, classify, required_languages
 
 
 def _job(country, description="", location="", title="Senior Android Engineer"):
@@ -12,6 +12,11 @@ def test_free_movement_countries_are_eligible(country):
     result = classify(_job(country, "Hybrid in the office."))
     assert result.status == ELIGIBLE
     assert "UE" in result.reason
+
+
+def test_europe_without_country_is_eligible():
+    result = classify(_job(EUROPE, "Remote within the EU."))
+    assert result.status == ELIGIBLE
 
 
 def test_brazil_is_eligible():

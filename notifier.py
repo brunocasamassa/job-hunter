@@ -4,7 +4,7 @@
 import html
 import os
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 import requests
 from dotenv import load_dotenv
@@ -91,11 +91,27 @@ def _language_tag(codes: str | None) -> str:
     return f"🗣️ exige {', '.join(names)}" if names else ""
 
 
+def _age_tag(date_posted) -> str:
+    """'📅 há 3 dias' a partir de 'AAAA-MM-DD'; vazio se a data não vier."""
+    try:
+        posted = date.fromisoformat(str(date_posted or "")[:10])
+    except ValueError:
+        return ""
+    days = (date.today() - posted).days
+    if days < -1:
+        return ""
+    if days <= 0:
+        # As datas do radar são em UTC: à noite no Brasil, a vaga de agora já é de "amanhã".
+        return "📅 hoje"
+    return f"📅 há {days} dia{'s' if days > 1 else ''}"
+
+
 def format_job_block(job: dict, position: int) -> str:
     """Bloco de uma vaga dentro do resumo."""
     salary = (job.get("salary") or "").strip(" -")
     tags = [
         job.get("eligibility_reason") or "",
+        _age_tag(job.get("date_posted")),
         _language_tag(job.get("languages")),
         f"🔁 já vista em {job['repost_of']}" if job.get("repost_of") else "",
         f"💰 {salary}" if salary else "",
@@ -128,14 +144,14 @@ def _status_line(stats: dict | None, hidden_count: int) -> str:
     return "\n".join(lines)
 
 
-def build_digest(jobs: list[dict], stats: dict | None = None,
-                 hidden_count: int = 0) -> list[tuple[str, list[str]]]:
+def build_digest(jobs: list[dict], stats: dict | None = None, hidden_count: int = 0,
+                 title: str = "🔔 Job Hunter") -> list[tuple[str, list[str]]]:
     """
     Resumo das vagas: seções por elegibilidade, maior nota primeiro.
     Retorna [(mensagem, urls_das_vagas_nela)], cada mensagem dentro do limite.
     """
     now = datetime.now().strftime("%H:%M • %d/%m/%Y")
-    header = f"🔔 <b>Job Hunter — {len(jobs)} vaga(s)</b>\n⏰ {now}"
+    header = f"<b>{_esc(title)} — {len(jobs)} vaga(s)</b>\n⏰ {now}"
     status = _status_line(stats, hidden_count)
     if status:
         header += f"\n{status}"
@@ -161,7 +177,7 @@ def build_digest(jobs: list[dict], stats: dict | None = None,
 
 
 def notify_jobs(new_jobs: list[dict], stats: dict | None = None,
-                hidden_count: int = 0) -> set[str]:
+                hidden_count: int = 0, title: str = "🔔 Job Hunter") -> set[str]:
     """
     Envia o resumo no Telegram e retorna as URLs entregues.
     Sempre dispara — sem vagas, informa o status da execução.
@@ -178,7 +194,7 @@ def notify_jobs(new_jobs: list[dict], stats: dict | None = None,
         return set()
 
     delivered: set[str] = set()
-    messages = build_digest(new_jobs, stats=stats, hidden_count=hidden_count)
+    messages = build_digest(new_jobs, stats=stats, hidden_count=hidden_count, title=title)
     for index, (text, urls) in enumerate(messages, start=1):
         if index > 1:
             time.sleep(SEND_INTERVAL_SECONDS)

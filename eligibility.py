@@ -4,7 +4,7 @@
 # para "confira" em vez de ser escondida.
 #
 # Ordem das regras:
-#   1. País da UE/EEE ou Suíça → pode (cidadania italiana, sem visto)
+#   1. País da UE/EEE ou Suíça, ou "Europa" sem país → pode (cidadania italiana, sem visto)
 #   2. Brasil → pode
 #   3. Texto diz que aceita LatAm/Brasil/qualquer lugar → pode
 #      (se também exigir autorização local → confira)
@@ -34,6 +34,10 @@ FREE_MOVEMENT_COUNTRIES = frozenset({
 })
 
 HOME_COUNTRY = "brazil"
+
+# Vaga da Europa sem país específico ("Remote - Europe", "EMEA"), vinda do
+# radar: dá para morar em qualquer país do bloco.
+EUROPE = "europe"
 
 # Acordo de Residência do Mercosul: brasileiro pede, no próprio país,
 # residência temporária de 2 anos com direito a trabalhar.
@@ -232,7 +236,7 @@ def classify(job: dict) -> Eligibility:
     text = f"{job.get('title') or ''}\n{location}\n{description}"
     languages = required_languages(description)
 
-    if country in FREE_MOVEMENT_COUNTRIES:
+    if country in FREE_MOVEMENT_COUNTRIES or country == EUROPE:
         return Eligibility(ELIGIBLE, "🇪🇺 UE/EEE/Suíça — sem visto", languages)
     if country == HOME_COUNTRY:
         return Eligibility(ELIGIBLE, "🇧🇷 Brasil", languages)

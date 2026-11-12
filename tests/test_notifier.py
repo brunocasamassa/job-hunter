@@ -88,6 +88,27 @@ def test_digest_groups_by_eligibility_and_sorts_by_score():
     assert "Exige visto" not in text  # sem vagas inelegíveis, sem seção
 
 
+# -1: data em UTC já no dia seguinte ao do Brasil.
+@pytest.mark.parametrize("days_ago, tag", [(-1, "📅 hoje"), (0, "📅 hoje"), (1, "📅 há 1 dia"), (12, "📅 há 12 dias")])
+def test_job_block_shows_how_old_the_job_is(days_ago, tag):
+    from datetime import date, timedelta
+    posted = (date.today() - timedelta(days=days_ago)).isoformat()
+    assert tag in notifier.format_job_block(_job(date_posted=posted), 1)
+
+
+@pytest.mark.parametrize("date_posted", ["N/A", "", None, "2999-01-01"])
+def test_job_block_without_valid_date_has_no_age(date_posted):
+    assert "📅" not in notifier.format_job_block(_job(date_posted=date_posted), 1)
+
+
+def test_digest_header_uses_the_title():
+    [(default, _)] = notifier.build_digest([_job(eligibility=ELIGIBLE)])
+    [(radar, _)] = notifier.build_digest([_job(eligibility=ELIGIBLE)], title="📡 Radar")
+
+    assert default.startswith("<b>🔔 Job Hunter — 1 vaga(s)</b>")
+    assert radar.startswith("<b>📡 Radar — 1 vaga(s)</b>")
+
+
 def test_digest_splits_long_lists_within_limit():
     jobs = [_job(f"u/{n}", f"Android Engineer {n}", eligibility=ELIGIBLE, score=5) for n in range(40)]
     messages = notifier.build_digest(jobs)
