@@ -10,6 +10,10 @@ from job_scraper import _clean, _format_salary, is_relevant
     "Android Engineer, Games Studios",
     "Senior Android Developer (Kotlin)",
     "AUTOMOTIVE Embedded Engineer",
+    "Senior AOSP Engineer",
+    "Infotainment Platform Engineer (AAOS)",
+    "Internal Tools Android Engineer",
+    "Senior Android Engineer, International Payments",
 ])
 def test_relevant_titles_pass(title):
     assert is_relevant(title)
@@ -22,17 +26,47 @@ def test_relevant_titles_pass(title):
     "React Native Developer (Android/iOS)",
     "Android & iOS Engineer",
     "Automotive Fullstack Engineer",
+    "Full Stack Developer (Android, React)",
+    "Android Full-Stack Engineer",
 ])
 def test_blacklisted_titles_are_dropped(title):
     assert not is_relevant(title)
 
 
 @pytest.mark.parametrize("title", [
-    "Senior AOSP Engineer",
+    "Junior Android Developer",
+    "Android Developer Jr.",
+    "Desenvolvedor Android Júnior",
+    "Junior/Mid Android Engineer",
+    "Android Intern",
+    "Internship - Android Automotive",
+    "Android Trainee",
+    "Estágio em Desenvolvimento Android",
+    "Estagio Android",
+    "Estagiário(a) Android",
+    "Werkstudent Android Developer (m/w/d)",
+    "Working Student - Android",
+    "Praktikum Android-Entwicklung",
+])
+def test_entry_level_titles_are_dropped(title):
+    assert not is_relevant(title)
+
+
+@pytest.mark.parametrize("title", [
+    "Junior/Regular/Senior Android Developer",
+    "Android Developer (Jr/Sr)",
+    "Lead Android Engineer - Junior to Lead",
+])
+def test_entry_level_title_that_also_accepts_senior_passes(title):
+    assert is_relevant(title)
+
+
+@pytest.mark.parametrize("title", [
     "Senior Mobile Engineer",
     "Senior Backend Engineer",
+    "Senior Infotainment Engineer",
 ])
-def test_title_without_android_or_automotive_is_dropped(title):
+def test_title_without_keyword_is_dropped(title):
     assert not is_relevant(title)
 
 

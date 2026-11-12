@@ -13,7 +13,12 @@ import jobspy_patches  # noqa: F401
 from jobspy.linkedin import LinkedIn
 from jobspy.model import ScraperInput, Site
 
-SEARCH_TERM = "Android"
+# Termos enviados às buscas. Cada termo repete o ciclo inteiro de buscas
+# (todas as REGIONS + GLASSDOOR_REGIONS), então cada termo a mais custa
+# mais requests — e o LinkedIn limita por IP.
+SEARCH_TERMS = [
+    "Android",
+]
 
 # A busca do LinkedIn não traz descrição nem o link de candidatura no site da
 # empresa. Buscamos esses detalhes só das vagas NOVAS, 1 request por vaga.
@@ -27,105 +32,131 @@ LINKEDIN_DETAILS_MAX_CONSECUTIVE_FAILURES = 3
 # Teto para a descrição guardada no banco.
 DESCRIPTION_MAX_CHARS = 20_000
 
-# KEYWORDS e BLACKLIST_TITLES não diferenciam maiúsculas/minúsculas.
+# KEYWORDS, BLACKLIST_TITLES e JUNIOR_TITLES não diferenciam maiúsculas/minúsculas.
 # - KEYWORDS casam como trecho do título ("android" pega "Android Engineer").
-# - BLACKLIST_TITLES casam como palavra inteira ("ios" pega "Android/iOS",
-#   mas não "Studios").
+# - BLACKLIST_TITLES e JUNIOR_TITLES casam como palavra inteira ("ios" pega
+#   "Android/iOS", mas não "Studios"; "intern" não pega "Internal").
 KEYWORDS = [
     "Android",
     "Automotive",
+    "AAOS",
+    "AOSP",
 ]
 
+# Tipos de vaga que não são a sua.
 BLACKLIST_TITLES = [
     "react native",
     "flutter",
     "ios only",
     "fullstack",
+    "full stack",
+    "full-stack",
     "ios developer",
     "Backend developer",
     "ios",
-    "Quality Assurance"
-
+    "Quality Assurance",
 ]
 
-# (location, country_indeed) — location é usado pelo LinkedIn/Glassdoor,
+# Vagas de entrada. Caem fora, a não ser que o título também aceite sênior:
+# "Junior/Regular/Senior Android Developer" (formato comum em consultorias
+# como Luxoft e GlobalLogic) continua.
+JUNIOR_TITLES = [
+    "junior", "júnior", "jr",
+    "intern", "internship", "trainee",
+    "estágio", "estagio", "estagiário", "estagiária",
+    "werkstudent", "working student", "praktikum", "praktikant",
+]
+SENIOR_TITLES = ["senior", "sênior", "sr", "lead", "staff", "principal"]
+
+# Modo de busca por país:
+# - ALL:    todas as vagas (presencial, híbrida, remota) — países onde você
+#           pode trabalhar: UE/EEE/Suíça (cidadania italiana), Brasil e
+#           Mercosul (residência facilitada para brasileiros).
+# - REMOTE: só vagas remotas — para país que exige visto, onde a vaga
+#           presencial seria descartada de qualquer jeito. Nenhum na lista
+#           hoje; exemplo: ("United States", "USA", REMOTE).
+ALL = "all"
+REMOTE = "remote"
+
+# (location, country_indeed, modo) — location é usado pelo LinkedIn/Glassdoor,
 # country_indeed restringe o domínio regional do Indeed.
+# Só países onde você pode trabalhar. Nos comentários, empresas que a
+# pesquisa de nov/2026 achou contratando Android/Android Automotive.
+# A ordem importa: se o LinkedIn bloquear no meio da execução, os últimos
+# ficam sem resultado.
 REGIONS = [
-    # América do Sul
-    ("Brasil",    "Brazil"),
-    ("Argentina", "Argentina"),
-    ("Colombia",  "Colombia"),
-    ("Chile",     "Chile"),
-    # América do Norte
-    ("United States", "USA"),
-    ("Canada",        "Canada"),
-    ("Mexico",        "Mexico"),
-    # Europa
-    ("United Kingdom", "UK"),
-    ("Germany",        "Germany"),
-    ("Netherlands",    "Netherlands"),
-    ("Portugal",       "Portugal"),
-    ("Spain",          "Spain"),
-    ("France",         "France"),
-    ("Sweden",         "Sweden"),
-    ("Switzerland",    "Switzerland"),
-    ("Ireland",        "Ireland"),
-    ("Poland",         "Poland"),
-    # Leste Europeu
-    ("Czech Republic", "Czech Republic"),
-    ("Hungary",        "Hungary"),
-    ("Slovakia",       "Slovakia"),
-    ("Bulgaria",       "Bulgaria"),
-    ("Croatia",        "Croatia"),
-    ("Lithuania",      "Lithuania"),
-    ("Latvia",         "Latvia"),
-    ("Estonia",        "Estonia"),
-    # Ásia
-    ("Thailand",       "Thailand"),
-    ("Singapore",      "Singapore"),
-    ("Indonesia",      "Indonesia"),
+    ("Brasil",         "Brazil",         ALL),  # casa; vagas remotas de empresas de fora
+    # Polos de Android Automotive (AAOS)
+    ("Germany",        "Germany",        ALL),  # BMW, CARIAD, Google, Porsche, Accenture
+    ("Sweden",         "Sweden",         ALL),  # Volvo Cars, AFRY, GlobalLogic (Gotemburgo)
+    ("Poland",         "Poland",         ALL),  # Google Kraków, EPAM, GlobalLogic
+    ("Romania",        "Romania",        ALL),  # Luxoft, Accenture, rinf.tech, Porsche Eng., P3
+    ("Czech Republic", "Czech Republic", ALL),  # Digiteq (CARIAD/Škoda), Quest Global
+    ("Bulgaria",       "Bulgaria",       ALL),  # Luxoft, P3, MBition (Mercedes)
+    ("Hungary",        "Hungary",        ALL),  # NNG, aiMotive, Jabil
+    ("Spain",          "Spain",          ALL),  # Luxoft Spain, RDT, GlobalLogic
+    ("Portugal",       "Portugal",       ALL),  # Critical TechWorks (BMW)
+    ("Italy",          "Italy",          ALL),  # Stellantis, Marelli, Italdesign (Turim)
+    ("Netherlands",    "Netherlands",    ALL),  # TomTom
+    ("Finland",        "Finland",        ALL),  # Rightware, Mapbox, AFRY, Unikie
+    ("Croatia",        "Croatia",        ALL),  # GlobalLogic, Spyrosoft, Rimac
+    ("Austria",        "Austria",        ALL),  # Tieto, A&R Tech, Magna
+    ("France",         "France",         ALL),  # Ampere (Renault), P3 — quase tudo em francês
+    # Menos vagas, ainda vale
+    ("Ireland",        "Ireland",        ALL),  # GM, SiriusXM (Dublin), Valeo — inglês nativo
+    ("Switzerland",    "Switzerland",    ALL),  # Google Zurique
+    ("Slovakia",       "Slovakia",       ALL),  # GlobalLogic Košice
+    ("Lithuania",      "Lithuania",      ALL),  # Unity, OBDeleven (Vilnius)
+    ("Estonia",        "Estonia",        ALL),  # Unikie (Tallinn)
+    ("Latvia",         "Latvia",         ALL),  # UE
+    ("Argentina",      "Argentina",      ALL),  # Mercosul; Capgemini e vagas "remoto LatAm"
+    ("Chile",          "Chile",          ALL),  # Mercosul
 ]
 
 # Países com domínio Glassdoor próprio no enum do JobSpy.
 # Demais países em REGIONS lançam `Glassdoor is not available for X` —
 # por isso a lista do Glassdoor é separada da do LinkedIn/Indeed.
 GLASSDOOR_REGIONS = [
-    ("Brasil",         "Brazil"),
-    ("Argentina",      "Argentina"),
-    ("United States",  "USA"),
-    ("Canada",         "Canada"),
-    ("Mexico",         "Mexico"),
-    ("United Kingdom", "UK"),
-    ("Germany",        "Germany"),
-    ("Netherlands",    "Netherlands"),
-    ("Spain",          "Spain"),
-    ("France",         "France"),
-    ("Switzerland",    "Switzerland"),
-    ("Ireland",        "Ireland"),
-    ("Singapore",      "Singapore"),
+    ("Brasil",      "Brazil",      ALL),
+    ("Germany",     "Germany",     ALL),
+    ("Spain",       "Spain",       ALL),
+    ("Italy",       "Italy",       ALL),
+    ("Netherlands", "Netherlands", ALL),
+    ("Austria",     "Austria",     ALL),
+    ("France",      "France",      ALL),
+    ("Ireland",     "Ireland",     ALL),
+    ("Switzerland", "Switzerland", ALL),
+    ("Argentina",   "Argentina",   ALL),
 ]
 
 
 def _compile_blacklist(terms: list[str]) -> re.Pattern:
-    """Regex que casa qualquer termo da blacklist como palavra inteira."""
+    """Regex que casa qualquer um dos termos como palavra inteira."""
     normalized = sorted({t.strip().lower() for t in terms if t.strip()}, key=len, reverse=True)
     if not normalized:
-        return re.compile(r"(?!)")  # blacklist vazia: nunca casa
+        return re.compile(r"(?!)")  # lista vazia: nunca casa
     return re.compile(r"\b(?:" + "|".join(map(re.escape, normalized)) + r")\b")
 
 
 _KEYWORDS_NORMALIZED = tuple({kw.strip().lower() for kw in KEYWORDS if kw.strip()})
 _BLACKLIST_PATTERN = _compile_blacklist(BLACKLIST_TITLES)
+_JUNIOR_PATTERN = _compile_blacklist(JUNIOR_TITLES)
+_SENIOR_PATTERN = _compile_blacklist(SENIOR_TITLES)
 
 
 def is_relevant(title: str) -> bool:
     """
     Incluir a mais é barato (você só vê uma vaga extra); excluir a mais custa
-    uma vaga. Por isso keyword casa por trecho e blacklist por palavra inteira.
+    uma vaga. Por isso keyword casa por trecho, blacklist por palavra inteira
+    e vaga júnior só cai se o título não aceitar sênior também.
     """
     title_lower = title.lower()
-    has_keyword = any(kw in title_lower for kw in _KEYWORDS_NORMALIZED)
-    return has_keyword and _BLACKLIST_PATTERN.search(title_lower) is None
+    if not any(kw in title_lower for kw in _KEYWORDS_NORMALIZED):
+        return False
+    if _BLACKLIST_PATTERN.search(title_lower):
+        return False
+    is_junior = _JUNIOR_PATTERN.search(title_lower) is not None
+    return not is_junior or _SENIOR_PATTERN.search(title_lower) is not None
 
 
 def _is_missing(value) -> bool:
@@ -170,13 +201,20 @@ def _format_salary(row) -> str:
     return text
 
 
-def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, all_jobs, label=None):
-    label = label or location
-    print(f"\n🔍 Buscando: '{SEARCH_TERM}' em {label} ({', '.join(site_names)})...")
+def _as_bool(value) -> bool:
+    return False if _is_missing(value) else bool(value)
+
+
+def _scrape_and_collect(site_names, search_term, location, country_indeed, mode,
+                        hours_old, stats, all_jobs):
+    remote_only = mode == REMOTE
+    scope = " (só remotas)" if remote_only else ""
+    print(f"\n🔍 Buscando: '{search_term}' em {location}{scope} ({', '.join(site_names)})...")
     stats["requests"] += 1
     try:
         jobs_df = logger.debug_scrape(
-            site_names, SEARCH_TERM, location, country_indeed, hours_old
+            site_names, search_term, location, country_indeed, hours_old,
+            is_remote=remote_only,
         )
         if jobs_df is None or jobs_df.empty:
             return
@@ -198,6 +236,8 @@ def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, 
                 "salary":      _format_salary(row),
                 "url_direct":  _clean(row.get("job_url_direct"), default=""),
                 "description": _clean(row.get("description"), default="")[:DESCRIPTION_MAX_CHARS],
+                "country":     country_indeed.lower(),
+                "is_remote":   _as_bool(row.get("is_remote")),
             })
 
         print(f"  ✅ {kept}/{len(jobs_df)} passaram no filtro de título")
@@ -208,23 +248,26 @@ def _scrape_and_collect(site_names, location, country_indeed, hours_old, stats, 
 
 def fetch_jobs(hours_old: int = 24) -> tuple[list[dict], dict]:
     """
-    Busca vagas nos últimos `hours_old` horas em múltiplas regiões.
+    Busca vagas nos últimos `hours_old` horas, para cada termo de SEARCH_TERMS:
     - LinkedIn + Indeed: todas as regiões em REGIONS
-    - Glassdoor: apenas regiões em GLASSDOOR_REGIONS (usa glassdoor.com)
+    - Glassdoor: apenas regiões em GLASSDOOR_REGIONS
+    Regiões em modo REMOTE buscam só vagas remotas.
     Retorna (jobs, stats) onde stats = {"requests": int, "errors": int}.
     """
     all_jobs = []
     stats = {"requests": 0, "errors": 0}
 
-    for location, country_indeed in REGIONS:
-        _scrape_and_collect(
-            ["indeed", "linkedin"], location, country_indeed, hours_old, stats, all_jobs
-        )
-
-    for location, country_indeed in GLASSDOOR_REGIONS:
-        _scrape_and_collect(
-            ["glassdoor"], location, country_indeed, hours_old, stats, all_jobs
-        )
+    for search_term in SEARCH_TERMS:
+        for location, country_indeed, mode in REGIONS:
+            _scrape_and_collect(
+                ["indeed", "linkedin"], search_term, location, country_indeed, mode,
+                hours_old, stats, all_jobs,
+            )
+        for location, country_indeed, mode in GLASSDOOR_REGIONS:
+            _scrape_and_collect(
+                ["glassdoor"], search_term, location, country_indeed, mode,
+                hours_old, stats, all_jobs,
+            )
 
     # Remove duplicatas pelo link
     seen = set()

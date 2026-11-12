@@ -12,8 +12,11 @@ job-hunter/
 ├── main.py               # Orquestra tudo (rode este)
 ├── scheduler.py          # Roda main.py a cada INTERVALO_MINUTOS
 ├── job_scraper.py        # Busca vagas com JobSpy + filtro de títulos
-├── tracker.py            # Banco SQLite (evita duplicatas, guarda pendentes)
-├── notifier.py           # Envia alertas no Telegram
+├── eligibility.py        # Você pode trabalhar na vaga? (país, visto, idioma)
+├── dedupe.py             # Mesma vaga em sites diferentes / republicada
+├── ranking.py            # Nota de 0 a 10 para ordenar o resumo
+├── tracker.py            # Banco SQLite (histórico, pendentes)
+├── notifier.py           # Envia o resumo no Telegram
 ├── jobspy_patches.py     # Workarounds para bugs do JobSpy (Glassdoor)
 ├── logger.py             # Logging detalhado do Glassdoor
 ├── glassdoor_manager.py  # Testa se o Glassdoor está respondendo
@@ -87,14 +90,69 @@ nohup python scheduler.py > log.txt 2>&1 &
 
 ## ⚙️ Personalizar
 
+### Termos de busca e países
+Em `job_scraper.py`. Cada termo de `SEARCH_TERMS` repete todas as buscas
+(mais termos = mais requests; o LinkedIn limita por IP).
+
+```python
+SEARCH_TERMS = ["Android"]
+
+# (location, country_indeed, modo)
+REGIONS = [
+    ("Germany", "Germany", ALL),           # todas as vagas
+    ("Romania", "Romania", ALL),
+    # ("United States", "USA", REMOTE),    # só remotas (país exige visto)
+]
+```
+
+- `ALL`: países onde você pode trabalhar — UE/EEE/Suíça (cidadania italiana),
+  Brasil e Mercosul (residência facilitada para brasileiros).
+- `REMOTE`: países que exigem visto; presencial lá seria descartado de qualquer
+  jeito. Nenhum na lista hoje.
+- A lista atual só tem países onde você pode trabalhar. Os comentários dizem
+  quais empresas a pesquisa de nov/2026 achou contratando Android/Android Automotive.
+- A ordem importa: se o LinkedIn bloquear no meio da execução, os últimos
+  países ficam sem resultado.
+- Glassdoor só existe em alguns países: lista própria em `GLASSDOOR_REGIONS`.
+- Os testes conferem se cada país existe no JobSpy (e no Glassdoor, na lista
+  dele) e se o modo `ALL` só aparece em país onde você pode trabalhar.
+
+### Elegibilidade e idiomas
+`eligibility.py` classifica cada vaga:
+
+| Resultado | Quando |
+|---|---|
+| ✅ Pode aplicar | País da UE/EEE/Suíça ou Brasil; ou remota aberta a LatAm/Brasil/qualquer lugar |
+| ⚠️ Confira antes | Mercosul, oferece visto/relocação, sinais contraditórios ou sem descrição |
+| ❌ Exige visto | Pede autorização/residência local ("must be authorized to work in the US", "no sponsorship"…) ou não diz que aceita LatAm |
+
+As ❌ não são enviadas (só contadas no resumo). Para recebê-las também, em `main.py`:
+`SHOW_INELIGIBLE = True`.
+
+Vaga que exige idioma que você não fala ganha o aviso `🗣️ exige alemão`.
+Ajuste em `eligibility.py`:
+```python
+SPOKEN_LANGUAGES = frozenset({"english", "portuguese"})
+```
+
+### Vagas repetidas e republicadas
+A mesma empresa + título + país em dois sites vira uma vaga só (fica a versão
+com link do site da empresa). Se reaparecer com outra URL em menos de
+`REPOST_WINDOW_DAYS` (30, em `main.py`), não alerta de novo; depois disso,
+alerta com `🔁 já vista em …` — às vezes é vaga fantasma.
+
 ### Palavras-chave e títulos indesejados
 Em `job_scraper.py`. Maiúsculas/minúsculas não importam.
 - `KEYWORDS` casa como trecho do título (`"android"` pega "Senior Android Engineer").
 - `BLACKLIST_TITLES` casa como palavra inteira (`"ios"` pega "Android/iOS", mas não "Studios").
+- `JUNIOR_TITLES` (júnior, estágio, intern, Werkstudent…) também casa como
+  palavra inteira, mas só derruba a vaga se o título não tiver nível sênior
+  (`SENIOR_TITLES`): "Junior/Regular/Senior Android Developer" continua.
 
 ```python
-KEYWORDS = ["Android", "Automotive"]
-BLACKLIST_TITLES = ["react native", "flutter", "ios"]
+KEYWORDS = ["Android", "Automotive", "AAOS", "AOSP"]
+BLACKLIST_TITLES = ["react native", "flutter", "ios", "full stack"]
+JUNIOR_TITLES = ["junior", "jr", "intern", "trainee", "estágio"]
 ```
 
 ### Detalhes das vagas do LinkedIn
@@ -124,21 +182,37 @@ HISTORY_DAYS = 180   # quanto tempo lembrar das vagas já vistas
 
 ## 📨 O que chega no Telegram
 
-```
-🔔 Job Hunter — 3 vaga(s) nova(s)!
+Um resumo por execução, maior nota primeiro (quebrado em várias mensagens se
+for longo):
 
-🤖 Vaga 1/3 — LINKEDIN
-━━━━━━━━━━━━━━━━
-📱 Android Developer Sênior
-🏢 Nubank
-📍 São Paulo, SP • Remoto
-📅 2026-03-31
-🔗 Ver vaga                     ← link clicável
-🎯 Aplicar no site da empresa   ← quando a vaga tem link próprio
+```
+🔔 Job Hunter — 5 vaga(s)
+⏰ 17:05 • 12/11/2026
+🔍 Buscas: 41 | ✅ Erros: 0
+🙈 1 oculta(s): exigem visto/residência
+
+✅ Pode aplicar
+
+1. ⭐8 Senior Android Automotive Engineer
+🏢 ACME · 📍 Munich, BY, DE · INDEED
+🇪🇺 UE/EEE/Suíça — sem visto · 🗣️ exige alemão · 💰 75,000 - 95,000 EUR/yearly
+🔗 Ver vaga · 🎯 Aplicar no site da empresa
+
+2. ⭐7 Senior Android Engineer
+🏢 Gamma Inc · 📍 Remote · INDEED
+🌎 Remoto aberto a LatAm/Brasil
+🔗 Ver vaga
+
+⚠️ Confira antes
+
+3. ⭐5 Android Platform Engineer
+🏢 Zeta Ltd · 📍 Remote, UK · INDEED
+⚠️ Oferece visto/relocação
+🔗 Ver vaga
 ```
 
-Se alguma mensagem falhar (Telegram fora do ar, limite de envio), a vaga fica
-pendente no banco e é reenviada na próxima execução.
+Se alguma mensagem falhar (Telegram fora do ar, limite de envio), as vagas dela
+ficam pendentes no banco e são reenviadas na próxima execução.
 
 ---
 
