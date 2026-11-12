@@ -80,8 +80,8 @@ REMOTE = "remote"
 
 # (location, country_indeed, modo) — location é usado pelo LinkedIn/Glassdoor,
 # country_indeed restringe o domínio regional do Indeed.
-# Só países onde você pode trabalhar, com vagas de Android/Android Automotive
-# encontradas na pesquisa de nov/2026 (empresas nos comentários).
+# Só países onde você pode trabalhar. Nos comentários, empresas que a
+# pesquisa de nov/2026 achou contratando Android/Android Automotive.
 # A ordem importa: se o LinkedIn bloquear no meio da execução, os últimos
 # ficam sem resultado.
 REGIONS = [
@@ -108,7 +108,9 @@ REGIONS = [
     ("Slovakia",       "Slovakia",       ALL),  # GlobalLogic Košice
     ("Lithuania",      "Lithuania",      ALL),  # Unity, OBDeleven (Vilnius)
     ("Estonia",        "Estonia",        ALL),  # Unikie (Tallinn)
+    ("Latvia",         "Latvia",         ALL),  # UE
     ("Argentina",      "Argentina",      ALL),  # Mercosul; Capgemini e vagas "remoto LatAm"
+    ("Chile",          "Chile",          ALL),  # Mercosul
 ]
 
 # Países com domínio Glassdoor próprio no enum do JobSpy.

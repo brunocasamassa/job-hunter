@@ -109,8 +109,8 @@ REGIONS = [
   Brasil e Mercosul (residência facilitada para brasileiros).
 - `REMOTE`: países que exigem visto; presencial lá seria descartado de qualquer
   jeito. Nenhum na lista hoje.
-- A lista atual só tem países onde você pode trabalhar e onde a pesquisa de
-  nov/2026 achou vagas de Android/Android Automotive (empresas nos comentários).
+- A lista atual só tem países onde você pode trabalhar. Os comentários dizem
+  quais empresas a pesquisa de nov/2026 achou contratando Android/Android Automotive.
 - A ordem importa: se o LinkedIn bloquear no meio da execução, os últimos
   países ficam sem resultado.
 - Glassdoor só existe em alguns países: lista própria em `GLASSDOOR_REGIONS`.
