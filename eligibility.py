@@ -12,7 +12,8 @@
 #   5. Mercosul → confira (residência facilitada para brasileiros)
 #   6. Oferece visto/relocação → confira
 #   7. Sem descrição → confira
-#   8. Resto (país que exige visto, sem sinal de abertura) → não pode
+#   8. País desconhecido (radar, local que locations.py não reconhece) → confira
+#   9. Resto (país que exige visto, sem sinal de abertura) → não pode
 
 import re
 from dataclasses import dataclass
@@ -260,4 +261,6 @@ def classify(job: dict) -> Eligibility:
         return Eligibility(MAYBE, "⚠️ Oferece visto/relocação", languages)
     if not description.strip():
         return Eligibility(MAYBE, "❓ Sem descrição — confira o local", languages)
+    if not country:
+        return Eligibility(MAYBE, "❓ Local não reconhecido — confira", languages)
     return Eligibility(INELIGIBLE, "❌ Não diz que aceita LatAm", languages)
