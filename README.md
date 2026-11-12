@@ -99,15 +99,23 @@ SEARCH_TERMS = ["Android"]
 
 # (location, country_indeed, modo)
 REGIONS = [
-    ("Germany",       "Germany", ALL),     # todas as vagas
-    ("United States", "USA",     REMOTE),  # só remotas (país exige visto)
+    ("Germany", "Germany", ALL),           # todas as vagas
+    ("Romania", "Romania", ALL),
+    # ("United States", "USA", REMOTE),    # só remotas (país exige visto)
 ]
 ```
 
 - `ALL`: países onde você pode trabalhar — UE/EEE/Suíça (cidadania italiana),
   Brasil e Mercosul (residência facilitada para brasileiros).
-- `REMOTE`: países que exigem visto; presencial lá seria descartado de qualquer jeito.
+- `REMOTE`: países que exigem visto; presencial lá seria descartado de qualquer
+  jeito. Nenhum na lista hoje.
+- A lista atual só tem países onde você pode trabalhar e onde a pesquisa de
+  nov/2026 achou vagas de Android/Android Automotive (empresas nos comentários).
+- A ordem importa: se o LinkedIn bloquear no meio da execução, os últimos
+  países ficam sem resultado.
 - Glassdoor só existe em alguns países: lista própria em `GLASSDOOR_REGIONS`.
+- Os testes conferem se cada país existe no JobSpy (e no Glassdoor, na lista
+  dele) e se o modo `ALL` só aparece em país onde você pode trabalhar.
 
 ### Elegibilidade e idiomas
 `eligibility.py` classifica cada vaga:
@@ -137,10 +145,14 @@ alerta com `🔁 já vista em …` — às vezes é vaga fantasma.
 Em `job_scraper.py`. Maiúsculas/minúsculas não importam.
 - `KEYWORDS` casa como trecho do título (`"android"` pega "Senior Android Engineer").
 - `BLACKLIST_TITLES` casa como palavra inteira (`"ios"` pega "Android/iOS", mas não "Studios").
+- `JUNIOR_TITLES` (júnior, estágio, intern, Werkstudent…) também casa como
+  palavra inteira, mas só derruba a vaga se o título não tiver nível sênior
+  (`SENIOR_TITLES`): "Junior/Regular/Senior Android Developer" continua.
 
 ```python
-KEYWORDS = ["Android", "Automotive"]
-BLACKLIST_TITLES = ["react native", "flutter", "ios"]
+KEYWORDS = ["Android", "Automotive", "AAOS", "AOSP"]
+BLACKLIST_TITLES = ["react native", "flutter", "ios", "full stack"]
+JUNIOR_TITLES = ["junior", "jr", "intern", "trainee", "estágio"]
 ```
 
 ### Detalhes das vagas do LinkedIn

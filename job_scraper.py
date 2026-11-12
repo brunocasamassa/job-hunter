@@ -32,114 +32,129 @@ LINKEDIN_DETAILS_MAX_CONSECUTIVE_FAILURES = 3
 # Teto para a descrição guardada no banco.
 DESCRIPTION_MAX_CHARS = 20_000
 
-# KEYWORDS e BLACKLIST_TITLES não diferenciam maiúsculas/minúsculas.
+# KEYWORDS, BLACKLIST_TITLES e JUNIOR_TITLES não diferenciam maiúsculas/minúsculas.
 # - KEYWORDS casam como trecho do título ("android" pega "Android Engineer").
-# - BLACKLIST_TITLES casam como palavra inteira ("ios" pega "Android/iOS",
-#   mas não "Studios").
+# - BLACKLIST_TITLES e JUNIOR_TITLES casam como palavra inteira ("ios" pega
+#   "Android/iOS", mas não "Studios"; "intern" não pega "Internal").
 KEYWORDS = [
     "Android",
     "Automotive",
+    "AAOS",
+    "AOSP",
 ]
 
+# Tipos de vaga que não são a sua.
 BLACKLIST_TITLES = [
     "react native",
     "flutter",
     "ios only",
     "fullstack",
+    "full stack",
+    "full-stack",
     "ios developer",
     "Backend developer",
     "ios",
-    "Quality Assurance"
-
+    "Quality Assurance",
 ]
+
+# Vagas de entrada. Caem fora, a não ser que o título também aceite sênior:
+# "Junior/Regular/Senior Android Developer" (formato comum em consultorias
+# como Luxoft e GlobalLogic) continua.
+JUNIOR_TITLES = [
+    "junior", "júnior", "jr",
+    "intern", "internship", "trainee",
+    "estágio", "estagio", "estagiário", "estagiária",
+    "werkstudent", "working student", "praktikum", "praktikant",
+]
+SENIOR_TITLES = ["senior", "sênior", "sr", "lead", "staff", "principal"]
 
 # Modo de busca por país:
 # - ALL:    todas as vagas (presencial, híbrida, remota) — países onde você
 #           pode trabalhar: UE/EEE/Suíça (cidadania italiana), Brasil e
 #           Mercosul (residência facilitada para brasileiros).
-# - REMOTE: só vagas remotas — países que exigem visto; presencial lá
-#           seria descartado pelo filtro de elegibilidade de qualquer jeito.
+# - REMOTE: só vagas remotas — para país que exige visto, onde a vaga
+#           presencial seria descartada de qualquer jeito. Nenhum na lista
+#           hoje; exemplo: ("United States", "USA", REMOTE).
 ALL = "all"
 REMOTE = "remote"
 
 # (location, country_indeed, modo) — location é usado pelo LinkedIn/Glassdoor,
 # country_indeed restringe o domínio regional do Indeed.
+# Só países onde você pode trabalhar, com vagas de Android/Android Automotive
+# encontradas na pesquisa de nov/2026 (empresas nos comentários).
+# A ordem importa: se o LinkedIn bloquear no meio da execução, os últimos
+# ficam sem resultado.
 REGIONS = [
-    # América do Sul
-    ("Brasil",    "Brazil",    ALL),
-    ("Argentina", "Argentina", ALL),     # Mercosul
-    ("Colombia",  "Colombia",  ALL),     # Mercosul
-    ("Chile",     "Chile",     ALL),     # Mercosul
-    # América do Norte
-    ("United States", "USA",    REMOTE),
-    ("Canada",        "Canada", REMOTE),
-    ("Mexico",        "Mexico", REMOTE),
-    # Europa
-    ("United Kingdom", "UK",          REMOTE),  # cidadão da UE precisa de visto desde 2021
-    ("Germany",        "Germany",     ALL),
-    ("Netherlands",    "Netherlands", ALL),
-    ("Portugal",       "Portugal",    ALL),
-    ("Spain",          "Spain",       ALL),
-    ("France",         "France",      ALL),
-    ("Sweden",         "Sweden",      ALL),
-    ("Switzerland",    "Switzerland", ALL),
-    ("Ireland",        "Ireland",     ALL),
-    ("Poland",         "Poland",      ALL),
-    # Leste Europeu
-    ("Czech Republic", "Czech Republic", ALL),
-    ("Hungary",        "Hungary",        ALL),
-    ("Slovakia",       "Slovakia",       ALL),
-    ("Bulgaria",       "Bulgaria",       ALL),
-    ("Croatia",        "Croatia",        ALL),
-    ("Lithuania",      "Lithuania",      ALL),
-    ("Latvia",         "Latvia",         ALL),
-    ("Estonia",        "Estonia",        ALL),
-    # Ásia
-    ("Thailand",  "Thailand",  REMOTE),
-    ("Singapore", "Singapore", REMOTE),
-    ("Indonesia", "Indonesia", REMOTE),
+    ("Brasil",         "Brazil",         ALL),  # casa; vagas remotas de empresas de fora
+    # Polos de Android Automotive (AAOS)
+    ("Germany",        "Germany",        ALL),  # BMW, CARIAD, Google, Porsche, Accenture
+    ("Sweden",         "Sweden",         ALL),  # Volvo Cars, AFRY, GlobalLogic (Gotemburgo)
+    ("Poland",         "Poland",         ALL),  # Google Kraków, EPAM, GlobalLogic
+    ("Romania",        "Romania",        ALL),  # Luxoft, Accenture, rinf.tech, Porsche Eng., P3
+    ("Czech Republic", "Czech Republic", ALL),  # Digiteq (CARIAD/Škoda), Quest Global
+    ("Bulgaria",       "Bulgaria",       ALL),  # Luxoft, P3, MBition (Mercedes)
+    ("Hungary",        "Hungary",        ALL),  # NNG, aiMotive, Jabil
+    ("Spain",          "Spain",          ALL),  # Luxoft Spain, RDT, GlobalLogic
+    ("Portugal",       "Portugal",       ALL),  # Critical TechWorks (BMW)
+    ("Italy",          "Italy",          ALL),  # Stellantis, Marelli, Italdesign (Turim)
+    ("Netherlands",    "Netherlands",    ALL),  # TomTom
+    ("Finland",        "Finland",        ALL),  # Rightware, Mapbox, AFRY, Unikie
+    ("Croatia",        "Croatia",        ALL),  # GlobalLogic, Spyrosoft, Rimac
+    ("Austria",        "Austria",        ALL),  # Tieto, A&R Tech, Magna
+    ("France",         "France",         ALL),  # Ampere (Renault), P3 — quase tudo em francês
+    # Menos vagas, ainda vale
+    ("Ireland",        "Ireland",        ALL),  # GM, SiriusXM (Dublin), Valeo — inglês nativo
+    ("Switzerland",    "Switzerland",    ALL),  # Google Zurique
+    ("Slovakia",       "Slovakia",       ALL),  # GlobalLogic Košice
+    ("Lithuania",      "Lithuania",      ALL),  # Unity, OBDeleven (Vilnius)
+    ("Estonia",        "Estonia",        ALL),  # Unikie (Tallinn)
+    ("Argentina",      "Argentina",      ALL),  # Mercosul; Capgemini e vagas "remoto LatAm"
 ]
 
 # Países com domínio Glassdoor próprio no enum do JobSpy.
 # Demais países em REGIONS lançam `Glassdoor is not available for X` —
 # por isso a lista do Glassdoor é separada da do LinkedIn/Indeed.
 GLASSDOOR_REGIONS = [
-    ("Brasil",         "Brazil",      ALL),
-    ("Argentina",      "Argentina",   ALL),
-    ("United States",  "USA",         REMOTE),
-    ("Canada",         "Canada",      REMOTE),
-    ("Mexico",         "Mexico",      REMOTE),
-    ("United Kingdom", "UK",          REMOTE),
-    ("Germany",        "Germany",     ALL),
-    ("Netherlands",    "Netherlands", ALL),
-    ("Spain",          "Spain",       ALL),
-    ("France",         "France",      ALL),
-    ("Switzerland",    "Switzerland", ALL),
-    ("Ireland",        "Ireland",     ALL),
-    ("Singapore",      "Singapore",   REMOTE),
+    ("Brasil",      "Brazil",      ALL),
+    ("Germany",     "Germany",     ALL),
+    ("Spain",       "Spain",       ALL),
+    ("Italy",       "Italy",       ALL),
+    ("Netherlands", "Netherlands", ALL),
+    ("Austria",     "Austria",     ALL),
+    ("France",      "France",      ALL),
+    ("Ireland",     "Ireland",     ALL),
+    ("Switzerland", "Switzerland", ALL),
+    ("Argentina",   "Argentina",   ALL),
 ]
 
 
 def _compile_blacklist(terms: list[str]) -> re.Pattern:
-    """Regex que casa qualquer termo da blacklist como palavra inteira."""
+    """Regex que casa qualquer um dos termos como palavra inteira."""
     normalized = sorted({t.strip().lower() for t in terms if t.strip()}, key=len, reverse=True)
     if not normalized:
-        return re.compile(r"(?!)")  # blacklist vazia: nunca casa
+        return re.compile(r"(?!)")  # lista vazia: nunca casa
     return re.compile(r"\b(?:" + "|".join(map(re.escape, normalized)) + r")\b")
 
 
 _KEYWORDS_NORMALIZED = tuple({kw.strip().lower() for kw in KEYWORDS if kw.strip()})
 _BLACKLIST_PATTERN = _compile_blacklist(BLACKLIST_TITLES)
+_JUNIOR_PATTERN = _compile_blacklist(JUNIOR_TITLES)
+_SENIOR_PATTERN = _compile_blacklist(SENIOR_TITLES)
 
 
 def is_relevant(title: str) -> bool:
     """
     Incluir a mais é barato (você só vê uma vaga extra); excluir a mais custa
-    uma vaga. Por isso keyword casa por trecho e blacklist por palavra inteira.
+    uma vaga. Por isso keyword casa por trecho, blacklist por palavra inteira
+    e vaga júnior só cai se o título não aceitar sênior também.
     """
     title_lower = title.lower()
-    has_keyword = any(kw in title_lower for kw in _KEYWORDS_NORMALIZED)
-    return has_keyword and _BLACKLIST_PATTERN.search(title_lower) is None
+    if not any(kw in title_lower for kw in _KEYWORDS_NORMALIZED):
+        return False
+    if _BLACKLIST_PATTERN.search(title_lower):
+        return False
+    is_junior = _JUNIOR_PATTERN.search(title_lower) is not None
+    return not is_junior or _SENIOR_PATTERN.search(title_lower) is not None
 
 
 def _is_missing(value) -> bool:

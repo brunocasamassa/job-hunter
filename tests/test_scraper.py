@@ -1,5 +1,7 @@
 import pandas as pd
+from jobspy.model import Country
 
+import eligibility
 import job_scraper
 
 
@@ -103,3 +105,24 @@ def test_fetch_runs_every_term_in_every_region_with_its_mode(monkeypatch):
 def test_every_region_has_a_valid_mode():
     for location, country, mode in job_scraper.REGIONS + job_scraper.GLASSDOOR_REGIONS:
         assert mode in {job_scraper.ALL, job_scraper.REMOTE}, location
+
+
+def test_all_mode_only_where_you_can_work():
+    workable = (
+        eligibility.FREE_MOVEMENT_COUNTRIES
+        | eligibility.MERCOSUR_RESIDENCE_COUNTRIES
+        | {eligibility.HOME_COUNTRY}
+    )
+    for location, country, mode in job_scraper.REGIONS + job_scraper.GLASSDOOR_REGIONS:
+        if mode == job_scraper.ALL:
+            assert country.lower() in workable, location
+
+
+def test_every_region_is_a_jobspy_country():
+    for location, country, mode in job_scraper.REGIONS:
+        Country.from_string(country)  # ValueError se o Indeed não tiver o país
+
+
+def test_glassdoor_regions_exist_on_glassdoor():
+    for location, country, mode in job_scraper.GLASSDOOR_REGIONS:
+        Country.from_string(country).get_glassdoor_url()  # levanta se não houver Glassdoor
