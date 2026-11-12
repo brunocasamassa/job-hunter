@@ -10,8 +10,16 @@ DB_PATH = "jobs.db"
 # Colunas criadas depois da primeira versão. init_db() as adiciona em bancos
 # antigos, sem perder o que já está salvo.
 _ADDED_COLUMNS = {
-    "url_direct":  "TEXT",
-    "description": "TEXT",
+    "url_direct":         "TEXT",
+    "description":        "TEXT",
+    "fingerprint":        "TEXT",     # empresa|título|país (dedupe.fingerprint)
+    "country":            "TEXT",
+    "eligibility":        "TEXT",     # eligible / maybe / ineligible
+    "eligibility_reason": "TEXT",
+    "languages":          "TEXT",     # idiomas exigidos, separados por vírgula
+    "score":              "INTEGER",
+    "repost_of":          "TEXT",     # data em que a mesma vaga foi vista antes
+    "suppressed":         "TEXT",     # por que não foi enviada: duplicate / ineligible
 }
 
 
@@ -32,6 +40,7 @@ def init_db(path: str = DB_PATH) -> sqlite3.Connection:
         )
     """)
     _add_missing_columns(conn)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_fingerprint ON jobs (fingerprint)")
     conn.commit()
     return conn
 
@@ -49,12 +58,18 @@ def is_new(conn: sqlite3.Connection, url: str) -> bool:
     return row is None
 
 
-def save_job(conn: sqlite3.Connection, job: dict) -> None:
+def save_job(conn: sqlite3.Connection, job: dict, suppressed: str | None = None) -> None:
+    """
+    Salva a vaga. Com `suppressed` (ex.: "duplicate", "ineligible") ela já entra
+    como notificada: fica no histórico, mas não vai para o Telegram.
+    """
     conn.execute("""
         INSERT OR IGNORE INTO jobs
             (url, title, company, location, source, date_posted, salary,
-             url_direct, description, found_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             url_direct, description, fingerprint, country, eligibility,
+             eligibility_reason, languages, score, repost_of, suppressed,
+             notified, found_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         job["job_url"],
         job["title"],
@@ -65,9 +80,26 @@ def save_job(conn: sqlite3.Connection, job: dict) -> None:
         job["salary"],
         job.get("url_direct", ""),
         job.get("description", ""),
+        job.get("fingerprint"),
+        job.get("country"),
+        job.get("eligibility"),
+        job.get("eligibility_reason"),
+        job.get("languages"),
+        job.get("score"),
+        job.get("repost_of"),
+        suppressed,
+        1 if suppressed else 0,
         datetime.now().isoformat(),
     ))
     conn.commit()
+
+
+def first_seen(conn: sqlite3.Connection, fingerprint: str) -> str | None:
+    """Quando uma vaga com essa impressão digital apareceu pela primeira vez (ISO)."""
+    row = conn.execute(
+        "SELECT MIN(found_at) AS first FROM jobs WHERE fingerprint = ?", (fingerprint,)
+    ).fetchone()
+    return row["first"] if row else None
 
 
 def get_pending_jobs(conn: sqlite3.Connection) -> list[dict]:
@@ -78,10 +110,11 @@ def get_pending_jobs(conn: sqlite3.Connection) -> list[dict]:
     """
     rows = conn.execute("""
         SELECT url AS job_url, title, company, location, source,
-               date_posted, salary, url_direct
+               date_posted, salary, url_direct, country, eligibility,
+               eligibility_reason, languages, score, repost_of
         FROM jobs
         WHERE notified = 0
-        ORDER BY found_at
+        ORDER BY COALESCE(score, 0) DESC, found_at
     """).fetchall()
     return [dict(row) for row in rows]
 
